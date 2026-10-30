@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+/*
+  D&D Dungeon Master theme — a single source of design tokens consumed by every
+  component (no ad-hoc colors). Dark obsidian canvas, parchment text, blood-red
+  and antique-gold accents, ember highlights.
+*/
+@theme {
+  /* Palette */
+  --color-obsidian: #0c0a09;
+  --color-obsidian-2: #14110f;
+  --color-stone: #2a2520;
+  --color-stone-2: #3b342c;
+  --color-parchment: #e8dcc0;
+  --color-parchment-dim: #b7a888;
+  --color-ink: #1a1614;
+  --color-blood: #7b1113;
+  --color-blood-bright: #a51d20;
+  --color-gold: #c8a14a;
+  --color-gold-bright: #e6c373;
+  --color-ember: #d97706;
+
+  /* Fonts (wired to next/font CSS variables in layout.tsx) */
+  --font-display: var(--font-cinzel), serif;
+  --font-rune: var(--font-medieval), serif;
+  --font-body: var(--font-garamond), Georgia, serif;
+
+  /* Misc */
+  --radius-card: 0.75rem;
+}
+
+:root {
+  --background: var(--color-obsidian);
+  --foreground: var(--color-parchment);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(123, 17, 19, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 100% 100%, rgba(200, 161, 74, 0.08), transparent 55%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Faint parchment grain usable on panels: class `.parchment` */
+.parchment {
+  background-color: var(--color-stone);
+  /* background-image:
+    radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    radial-gradient(rgba(0, 0, 0, 0.25) 1px, transparent 1px); */
+  background-size: 6px 6px, 6px 6px;
+  background-position: 0 0, 3px 3px;
+}
+
+/* Decorative gradient text for headings: class `.text-gilded` */
+.text-gilded {
+  background: linear-gradient(180deg, var(--color-gold-bright), var(--color-gold) 60%, #8a6d28);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Carved-stone heading fill: class `.text-carved-stone`
+   Real stone texture (public/textures/stone.jpg) overlaid on a light→dark tan
+   gradient, clipped to the glyphs; layered text-shadows give chiseled depth and
+   the `#stone` SVG displacement filter (in Hero) fractures the edges into cracks.
+   The `::before` paints a gold carved outline via -webkit-text-stroke, using
+   `data-text` — so this class must sit on each text element (per line), not a
+   wrapper. Requires: element has `position: relative` (set here) + `data-text`.
+   NOTE: drop a real texture at public/textures/stone.jpg — until then the
+   gradient alone shows (the url() layer silently no-ops). */
+.text-carved-stone {
+  position: relative;
+  font-family: "Cinzel", var(--font-cinzel), serif;
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+
+  /* Stone texture over tan gradient */
+  background:
+    url("./texture.png") linear-gradient(180deg,
+      #f5e7c7 0%,
+      #d8c39b 30%,
+      #a78b63 70%,
+      #5c432b 100%);
+  background-size: cover;
+  background-blend-mode: overlay;
+
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+
+  /* Depth */
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.45),
+    0 2px 0 rgba(220, 190, 140, 0.55),
+    0 3px 2px rgba(0, 0, 0, 0.35),
+    0 6px 10px rgba(0, 0, 0, 0.45),
+    0 12px 28px rgba(0, 0, 0, 0.55);
+
+  /* Cracks (edge displacement) + cast shadow */
+  /* filter: url(#stone) drop-shadow(0 10px 20px rgba(0, 0, 0, 0.45)); */
+}
+
+/* Carved gold outline — duplicates the glyphs behind the fill via data-text */
+.text-carved-stone::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: transparent;
+  -webkit-text-stroke: 2px #d8b67d;
+  text-shadow:
+    0 0 2px rgba(255, 220, 150, 0.6),
+    0 0 8px rgba(255, 190, 80, 0.25);
+  pointer-events: none;
+}
+
+/* Thin themed scrollbar for inner scroll panels */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-stone-2) transparent;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--color-stone-2);
+  border-radius: 9999px;
+}
+
+/* --- Voice transcription visuals ------------------------------------------ */
+
+/* Equalizer bar bounce (ChatGPT-style live waveform). Bars stagger their delay
+   inline. Uses transform:scaleY so it stays GPU-cheap. */
+@keyframes voice-wave {
+
+  0%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.75;
+  }
+
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.voice-wave-bar {
+  transform-origin: center;
+  animation: voice-wave 0.9s ease-in-out infinite;
+}
+
+/* Expanding ember/gold ring around the active mic button. */
+@keyframes mic-ring {
+  0% {
+    box-shadow:
+      0 0 0 0 rgba(230, 195, 115, 0.5),
+      0 0 18px 0 rgba(217, 119, 6, 0.35);
+  }
+
+  70% {
+    box-shadow:
+      0 0 0 12px rgba(230, 195, 115, 0),
+      0 0 22px 2px rgba(217, 119, 6, 0.15);
+  }
+
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(230, 195, 115, 0),
+      0 0 18px 0 rgba(217, 119, 6, 0.35);
+  }
+}
+
+.animate-mic-ring {
+  animation: mic-ring 1.8s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
