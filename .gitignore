@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.anna/
+dist/
+build/
+*.spec
+.env
+.env.*
+!.env.example
+ui/node_modules/
+ui/.next/
+ui/out/
