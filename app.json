@@ -1,0 +1,15 @@
+{
+  "name": "D&D Dungeon Master",
+  "slug": "dnd-dungeon-master",
+  "version": "0.2.0",
+  "tagline": "Build a party. Choose your adventure.",
+  "description": "A Dungeons & Dragons campaign app. Create a party, play through a published adventure with Anna's AI, approve each story turn, and resume your campaign across devices.",
+  "category": "games",
+  "pricing_model": "free",
+  "author": "Yash",
+  "bundled_executas": {
+    "dnd-game-master": {
+      "path": "./executas/dnd-game-master"
+    }
+  }
+}
