@@ -1,0 +1,18 @@
+# Copyright (c) 2026 Yash
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dnd-game-master"
+version = "0.1.0"
+description = "Anna Executa port of the D&D multi-agent Dungeon Master workflow"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+dnd-game-master = "dnd_game_master:main"
+
+[tool.setuptools]
+py-modules = ["dnd_game_master"]
+packages = ["dnd_game_master_core"]

@@ -1,0 +1,227 @@
+{
+  "name": "dnd-game-master",
+  "display_name": "D&D Game Master",
+  "version": "0.2.0",
+  "description": "Anna-native multi-agent D&D game master with setup, safety guardrails, intent routing, combat/rules, NPC dialogue, adventure research, evaluation, approval, persistent campaign state, and optional Gemini Live voice.",
+  "author": "Yash",
+  "host_capabilities": [
+    "llm.sample"
+  ],
+  "credentials": [
+    {
+      "name": "GOOGLE_API_KEY",
+      "display_name": "Google API key (legacy / optional voice)",
+      "description": "Original Cloud Run key. Not used for Anna text-model calls. The voice_token method accepts it as a fallback when GEMINI_API_KEY is not provided.",
+      "required": false,
+      "sensitive": true
+    },
+    {
+      "name": "GEMINI_API_KEY",
+      "display_name": "Gemini API key for Live voice",
+      "description": "Optional Anna-specific voice credential. Used only by voice_token to issue a short-lived Gemini Live token; takes precedence over GOOGLE_API_KEY and is never returned or logged.",
+      "required": false,
+      "sensitive": true
+    },
+    {
+      "name": "GOOGLE_MODEL",
+      "display_name": "Original Google model setting",
+      "description": "Present in the original Cloud Run environment file for the ADK backend. Unused by the Anna runtime, which uses Anna llm.sample.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "SMART_MODEL",
+      "display_name": "Original smart model setting",
+      "description": "Present in the original Cloud Run environment file for the ADK backend. Unused by the Anna runtime, which uses Anna llm.sample.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "USE_LOCAL_LLM",
+      "display_name": "Original local LLM toggle",
+      "description": "Original Cloud Run ADK setting. Unused by the Anna runtime; model calls are handled through Anna llm.sample.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "SESSION_DB_LOCAL",
+      "display_name": "Original local session database toggle",
+      "description": "Original Cloud Run ADK session-store setting. Unused by the Anna runtime.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "MONGO_URI",
+      "display_name": "Original MongoDB URI",
+      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime, which stores campaigns through Anna user-scoped storage.",
+      "required": false,
+      "sensitive": true
+    },
+    {
+      "name": "DB_NAME",
+      "display_name": "Original MongoDB database name",
+      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "CAMPAIGN_COLLECTION",
+      "display_name": "Original campaign collection name",
+      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "SESSION_COLLECTION",
+      "display_name": "Original session collection name",
+      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "EVENT_COLLECTION",
+      "display_name": "Original event collection name",
+      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "LOG_LEVEL",
+      "display_name": "Original backend log level",
+      "description": "Original Cloud Run ADK/FastAPI logging setting. Unused by the Anna runtime.",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "name": "ALLOW_ORIGINS",
+      "display_name": "Original backend CORS origins",
+      "description": "Original Cloud Run FastAPI CORS setting. Unused by the static Anna app and bundled Executa.",
+      "required": false,
+      "sensitive": false
+    }
+  ],
+  "tools": [
+    {
+      "name": "create_campaign",
+      "description": "Set up a D&D party from Open5e class data, consult the Tomb of Annihilation story librarian, and create a grounded opening scene.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Campaign title.",
+          "required": true
+        },
+        {
+          "name": "premise",
+          "type": "string",
+          "description": "Player-authored campaign premise and tone.",
+          "required": true
+        },
+        {
+          "name": "party",
+          "type": "array",
+          "items_type": "object",
+          "description": "Party members with name, class, and ancestry.",
+          "required": true
+        },
+        {
+          "name": "campaign_id",
+          "type": "string",
+          "description": "Optional campaign identifier chosen by the app for durable user-scoped storage.",
+          "required": false
+        },
+        {
+          "name": "game_id",
+          "type": "string",
+          "description": "Optional original campaign setting identifier.",
+          "required": false
+        }
+      ],
+      "timeout": 120
+    },
+    {
+      "name": "draft_turn",
+      "description": "Run the guardrail, intent classifier, source-backed story librarian, ACTION/NPC_DIALOGUE/CAMPAIGN specialist, schema and semantic evaluator, and return a player-reviewable draft.",
+      "parameters": [
+        {
+          "name": "campaign",
+          "type": "object",
+          "description": "Current saved campaign state.",
+          "required": true
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "description": "The player's declared action or dialogue.",
+          "required": true
+        },
+        {
+          "name": "dice",
+          "type": "object",
+          "description": "Optional d20 and d100 rolls selected by the player.",
+          "required": false
+        }
+      ],
+      "timeout": 240
+    },
+    {
+      "name": "resolve_turn",
+      "description": "Commit a player-approved draft, including campaign scene, party, combat, dialogue, quest, and event history changes, or discard it.",
+      "parameters": [
+        {
+          "name": "campaign",
+          "type": "object",
+          "description": "Current saved campaign state.",
+          "required": true
+        },
+        {
+          "name": "draft",
+          "type": "object",
+          "description": "Pending draft returned by draft_turn.",
+          "required": true
+        },
+        {
+          "name": "approved",
+          "type": "boolean",
+          "description": "True to commit the draft; false to discard it.",
+          "required": true
+        }
+      ],
+      "timeout": 20
+    },
+    {
+      "name": "get_class_profiles",
+      "description": "Return the original Open5e D&D class profiles and archetypes used by the production party builder.",
+      "parameters": [],
+      "timeout": 20
+    },
+    {
+      "name": "voice_token",
+      "description": "Issue a one-use, short-lived Gemini Live API token for browser voice interaction. Requires an app-configured GEMINI_API_KEY credential.",
+      "parameters": [
+        {
+          "name": "type",
+          "type": "string",
+          "description": "Voice mode: text for microphone transcription or audio for speech playback.",
+          "required": false
+        },
+        {
+          "name": "emotion",
+          "type": "string",
+          "description": "Optional allowed vocal mood for speech playback.",
+          "required": false
+        },
+        {
+          "name": "voice_name",
+          "type": "string",
+          "description": "Optional Gemini prebuilt voice name for speech playback.",
+          "required": false
+        }
+      ],
+      "timeout": 20
+    }
+  ],
+  "runtime": {
+    "type": "binary"
+  }
+}
