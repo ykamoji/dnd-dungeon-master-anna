@@ -1,0 +1,44 @@
+{
+  "distribution": {
+    "active": "local",
+    "profiles": {
+      "local": {
+        "type": "local",
+        "supports_protocol": true
+      },
+      "binary": {
+        "type": "binary",
+        "supports_protocol": true,
+        "binary_artifacts": {
+          "darwin-arm64": {
+            "path": "dist/dnd-game-master-{version}-darwin-arm64.tar.gz",
+            "entrypoint": "dnd-game-master",
+            "format": "tar.gz"
+          },
+          "darwin-x86_64": {
+            "path": "dist/dnd-game-master-{version}-darwin-x86_64.tar.gz",
+            "entrypoint": "dnd-game-master",
+            "format": "tar.gz"
+          },
+          "linux-x86_64": {
+            "path": "dist/dnd-game-master-{version}-linux-x86_64.tar.gz",
+            "entrypoint": "dnd-game-master",
+            "format": "tar.gz"
+          },
+          "windows-x86_64": {
+            "path": "dist/dnd-game-master-{version}-windows-x86_64.zip",
+            "entrypoint": "dnd-game-master.exe",
+            "format": "zip"
+          }
+        }
+      }
+    }
+  },
+  "slug": "dnd-game-master",
+  "name": "D&D Game Master",
+  "version": "0.2.0",
+  "executa_type": "tool",
+  "tool_id": "tool-dev-dnd-game-master",
+  "type": "python",
+  "enabled": true
+}

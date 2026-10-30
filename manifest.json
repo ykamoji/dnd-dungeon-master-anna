@@ -1,0 +1,53 @@
+{
+  "schema": 2,
+  "host_capabilities": [
+    "llm.sample",
+    "aps.scope.user.read",
+    "aps.scope.user.write"
+  ],
+  "required_executas": [
+    {
+      "tool_id": "bundled:dnd-game-master",
+      "min_version": "0.1.0",
+      "version": "latest"
+    }
+  ],
+  "permissions": [],
+  "ui": {
+    "bundle": {
+      "format": "static-spa",
+      "entry": "index.html",
+      "external_origins": [
+        "https://generativelanguage.googleapis.com",
+        "https://raw.githubusercontent.com"
+      ]
+    },
+    "views": [
+      {
+        "name": "main",
+        "title": "D&D Dungeon Master",
+        "default": true
+      }
+    ],
+    "host_api": {
+      "tools": [
+        "required:bundled:dnd-game-master"
+      ],
+      "storage": [
+        "get",
+        "set",
+        "delete"
+      ]
+    },
+    "csp_overrides": {
+      "script-src": [
+        "'self'",
+        "'sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo='",
+        "'sha256-GZOJs/OU2eXqGwPx2Rd2w6kz4o6wnZvFFYXWPbiuGZs='",
+        "'sha256-gP5gEWxPYGAanG7eyaQ2Jt4pPgLg9QLLZpeA0XgdnLk='",
+        "'sha256-+4yOhOk1jmvctixIWk4mKUhY4jPzVIR2acU7Y6bCAqc='",
+        "'sha256-Tq57BVnWu2fjWZPf5o1G6MwmfXvQLjclsdecp1UH9cA='"
+      ]
+    }
+  }
+}
