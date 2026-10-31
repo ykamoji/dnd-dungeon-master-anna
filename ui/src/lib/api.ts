@@ -125,12 +125,13 @@ function unwrap<T>(value: unknown): T {
 function previewInvoke(method: string, args: Record<string, any>): any {
   const campaign = args.campaign as CampaignRecord | undefined;
   if (method === "get_class_profiles") {
-    return classSpecs.map(([name, hit_dice, hp_at_1st_level, prof_saving_throws, spellcasting_ability, prof_armor, prof_weapons, skills, roles]) => ({
+    const classes = classSpecs.map(([name, hit_dice, hp_at_1st_level, prof_saving_throws, spellcasting_ability, prof_armor, prof_weapons, skills, roles]) => ({
       name, slug: name.toLowerCase(), desc: name + " adventurer", hit_dice, hp_at_1st_level,
       prof_armor, prof_weapons, prof_saving_throws, prof_skills: "Choose 2 from " + skills,
       spellcasting_ability, subtypes_name: "Archetype",
       archetypes: roles.map((role) => ({ name: role, slug: role.toLowerCase().replaceAll(" ", "-"), desc: role + " archetype" })),
     }));
+    return { classes };
   }
   if (method === "create_campaign") {
     const party = (args.party as Array<Record<string, unknown>>).map((member) => ({ ...member, id: crypto.randomUUID(), hp: 12, max_hp: 12, armor_class: 12 }));
@@ -301,7 +302,9 @@ const classSpecs: Array<[string, string, string, string, string, string, string,
 ];
 
 export async function getClasses(): Promise<ClassProfile[]> {
-  return invokeTool<ClassProfile[]>("get_class_profiles");
+  // The Executa wraps the list in an object: the Anna host drops bare-list results.
+  const result = await invokeTool<{ classes: ClassProfile[] } | ClassProfile[]>("get_class_profiles");
+  return Array.isArray(result) ? result : result.classes;
 }
 
 export async function getCampaigns(): Promise<CampaignSummary[]> {
