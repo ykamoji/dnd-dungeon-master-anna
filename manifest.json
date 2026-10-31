@@ -14,6 +14,9 @@
   ],
   "permissions": [],
   "ui": {
+    "browser_permissions": [
+      "microphone"
+    ],
     "bundle": {
       "format": "static-spa",
       "entry": "index.html",
@@ -43,10 +46,10 @@
       "script-src": [
         "'self'",
         "'sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo='",
-        "'sha256-GZOJs/OU2eXqGwPx2Rd2w6kz4o6wnZvFFYXWPbiuGZs='",
-        "'sha256-gP5gEWxPYGAanG7eyaQ2Jt4pPgLg9QLLZpeA0XgdnLk='",
+        "'sha256-NdqY7fprGT86DpgV6ip4ffQkCwT2oQwn75tYxu7VdEw='",
+        "'sha256-lSvN1BQOBOob3lMh5mJ+q1f5TABOLRo12qGdn656Iy4='",
         "'sha256-+4yOhOk1jmvctixIWk4mKUhY4jPzVIR2acU7Y6bCAqc='",
-        "'sha256-Tq57BVnWu2fjWZPf5o1G6MwmfXvQLjclsdecp1UH9cA='"
+        "'sha256-XQVuowzpfBuxwNAaVXoUoIx71ctqVzXSDqVGctP2HQA='"
       ]
     }
   }

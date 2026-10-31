@@ -38,7 +38,7 @@ type Action =
   | { type: "SELECT_TURN"; index: number }
   | { type: "SELECT_PENDING" }
   | { type: "SET_COMPOSER"; text: string }
-  | { type: "RUN_START" }
+  | { type: "RUN_START"; events?: SessionEvent[] }
   | { type: "AWAIT_APPROVAL"; draft: string; events: SessionEvent[] }
   | { type: "RUN_DONE" }
   | { type: "REJECTING" }
@@ -50,7 +50,7 @@ function reducer(state: ConsoleState, action: Action): ConsoleState {
     case "SELECT_TURN": return { ...state, activeIndex: action.index, viewPending: false };
     case "SELECT_PENDING": return { ...state, viewPending: true };
     case "SET_COMPOSER": return { ...state, composerDraft: action.text };
-    case "RUN_START": return { ...state, runStatus: "running", viewPending: true, events: [], pendingDraft: null, error: null };
+    case "RUN_START": return { ...state, runStatus: "running", viewPending: true, events: action.events ?? [], pendingDraft: null, error: null };
     case "AWAIT_APPROVAL": return { ...state, runStatus: "awaiting_approval", viewPending: true, pendingDraft: action.draft, events: action.events, error: null };
     case "RUN_DONE": return { ...state, runStatus: "idle", viewPending: false, events: [], pendingDraft: null, error: null };
     case "REJECTING": return { ...state, runStatus: "rejecting", pendingDraft: null };
@@ -174,7 +174,17 @@ export function ConsoleProvider({ history, historyLoading, progress, summary, re
       return;
     }
     busyRef.current = true;
-    dispatch({ type: "RUN_START" });
+    // The setup agent runs inside one tool call (no stream), so seed the live
+    // timeline with its kickoff instead of leaving the pending view blank.
+    const invocationId = `anna-setup-${campaignId}`;
+    const timestamp = Math.floor(Date.now() / 1000);
+    dispatch({
+      type: "RUN_START",
+      events: [
+        { id: invocationId + "-player", invocation_id: invocationId, timestamp, author: "user", content: { parts: [{ text: `Begin ${entry.title}` }] } },
+        { id: invocationId + "-setup", invocation_id: invocationId, timestamp: timestamp + 1, author: "setup_executor", content: { parts: [{ text: "Gathering the story, party classes and opening scene…" }] } },
+      ],
+    });
     void createCampaign({
       campaignId,
       name: entry.title,

@@ -151,7 +151,7 @@ class ExecutaProtocolTests(unittest.TestCase):
         profiles_response = self.app.call(
             "classes", "invoke", {"tool": "get_class_profiles", "arguments": {}}
         )
-        profiles = profiles_response["result"]["data"]
+        profiles = profiles_response["result"]["data"]["classes"]
         self.assertEqual(len(profiles), 12)
         ranger = next(profile for profile in profiles if profile["name"] == "Ranger")
         self.assertTrue(ranger["slug"])

@@ -373,7 +373,8 @@ def _invoke(params: dict[str, Any]) -> dict[str, Any]:
     if tool_name == "create_campaign":
         data = create_campaign(arguments.get("name", ""), arguments.get("premise", ""), arguments.get("party"), invoke_id, arguments.get("campaign_id"), arguments.get("game_id"))
     elif tool_name == "get_class_profiles":
-        data = get_class_profiles()
+        # The Anna host turns a bare list result into `{}`, so wrap it in an object.
+        data = {"classes": get_class_profiles()}
     elif tool_name == "draft_turn":
         data = draft_turn(arguments.get("campaign"), arguments.get("action", ""), invoke_id, arguments.get("dice"))
     elif tool_name == "resolve_turn":
