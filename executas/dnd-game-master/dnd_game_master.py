@@ -30,7 +30,7 @@ from dnd_game_master_core.data import get_class_profiles
 
 
 APP_NAME = "dnd-game-master"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 VOICE_AUDIO_MODEL = "gemini-3.8-live"
 VOICE_TRANSCRIPTION_MODEL = "gemini-3.5-transcribe-live"
 VOICE_NAMES = {

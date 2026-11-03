@@ -1,7 +1,7 @@
 {
   "name": "dnd-game-master",
   "display_name": "D&D Game Master",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Anna-native multi-agent D&D game master with setup, safety guardrails, intent routing, combat/rules, NPC dialogue, adventure research, evaluation, approval, persistent campaign state, and optional Gemini Live voice.",
   "author": "Yash",
   "host_capabilities": [
