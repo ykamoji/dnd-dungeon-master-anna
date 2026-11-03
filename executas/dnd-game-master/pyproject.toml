@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dnd-game-master"
-version = "0.1.0"
+version = "0.2.0"
 description = "Anna Executa port of the D&D multi-agent Dungeon Master workflow"
 requires-python = ">=3.11"
 dependencies = []

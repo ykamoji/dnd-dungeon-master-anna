@@ -64,19 +64,11 @@ The Executa protocol supports Anna v2 reverse `sampling/createMessage` calls and
 
 ## Environment variables and API keys
 
-Anna does not automatically load the original backend's `.env` or Cloud Run env file. For hosted Executas, declared values are supplied in `params.context.credentials`. The manifest declares every variable from `dnd-game-master-agent/cloudrun.env.example.yaml`, plus the Anna-specific `GEMINI_API_KEY` voice option. Every entry is optional so the original backend settings do not block installation.
+Anna does not automatically load the original backend's `.env` or Cloud Run env file. For hosted Executas, declared values are supplied in `params.context.credentials`. The tool manifest declares only the two optional credentials the Executa actually reads, so nothing blocks installation.
 
 Only `GEMINI_API_KEY` and `GOOGLE_API_KEY` are read by the Anna Executa, and only by `voice_token`. `GEMINI_API_KEY` takes precedence; `GOOGLE_API_KEY` is retained as the original Cloud Run key name and a voice fallback. Neither key is used for text generation: the Anna runtime uses `llm.sample`. Store these keys only as sensitive Anna credentials, never in the repository, UI bundle, or binary.
 
-The other Cloud Run variables are declared to make the source configuration explicit, but are migration references and do not configure the Anna runtime:
-
-| Variable(s) | Original purpose | Anna behavior |
-| --- | --- | --- |
-| `GOOGLE_MODEL`, `SMART_MODEL`, `USE_LOCAL_LLM` | ADK text model selection | Replaced by Anna `llm.sample`; unused by the Anna Executa. |
-| `SESSION_DB_LOCAL` | ADK session persistence mode | Unused; campaigns use Anna user-scoped storage. |
-| `MONGO_URI`, `DB_NAME`, `CAMPAIGN_COLLECTION`, `SESSION_COLLECTION`, `EVENT_COLLECTION` | MongoDB campaign/session/event storage | Unused; campaign state uses Anna user-scoped storage. `MONGO_URI` is marked sensitive because it can contain credentials. |
-| `LOG_LEVEL` | Cloud Run backend logging | Unused by the Anna Executa. |
-| `ALLOW_ORIGINS` | FastAPI CORS configuration | Unused by the static Anna app and bundled Executa. |
+The other original Cloud Run variables (`GOOGLE_MODEL`, `SMART_MODEL`, `USE_LOCAL_LLM`, `SESSION_DB_LOCAL`, the MongoDB settings, `LOG_LEVEL`, `ALLOW_ORIGINS`) are not declared: model calls go through Anna `llm.sample`, campaigns use Anna user-scoped storage, and the static app has no CORS or server logging to configure.
 
 `SESSION_SERVICE_URI` is intentionally not declared: the source Cloud Run example says to leave it unset so the original backend uses its local SQLite session store. For local voice development, the ignored `.env` or shell can provide either key; the committed `.env.example` contains only placeholders. The packaged Executa does not include `.env` files.
 
@@ -94,11 +86,11 @@ The review process can take up to five business days per submission or resubmiss
 
 The GitHub Actions workflow packages the Executa for these targets:
 
-- `linux-x86_64` as `executas/dnd-game-master/dist/dnd-game-master-{version}-linux-x86_64.tar.gz`
+- `linux-x86_64` as `executas/dnd-game-master/dist/dnd-game-master-v{version}-linux-x86_64.tar.gz`
 - `darwin-arm64` and `darwin-x86_64` as `.tar.gz`
 - `windows-x86_64` as `.zip`
 
-The Linux x86_64 artifact is the required Linux distribution target. Build artifacts and SHA-256 sidecars are emitted under `executas/dnd-game-master/dist/` and attached to version-tagged GitHub releases. Then validate the final app with Anna's CLI before Marketplace submission.
+Each archive follows Anna's binary distribution layout: a root `manifest.json` whose `runtime.binary.entrypoint` points to `bin/dnd-game-master` (`bin/dnd-game-master.exe` on Windows). `executa.json` declares these archives under `distribution.binary_artifacts`, so `anna-app apps cut` uploads them before freezing the version. Download every platform archive from the workflow run into `executas/dnd-game-master/dist/` before cutting a release; the Linux x86_64 archive is the one the cloud Agent installs. Then validate the final app with Anna's CLI before Marketplace submission.
 
 ## License
 

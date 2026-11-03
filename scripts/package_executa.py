@@ -5,6 +5,7 @@
 
 import argparse
 import hashlib
+import io
 import json
 from pathlib import Path
 import tarfile
@@ -14,9 +15,22 @@ ROOT = Path(__file__).resolve().parents[1]
 EXECUTA = ROOT / "executas" / "dnd-game-master"
 
 
-def read_version() -> str:
-    with (ROOT / "app.json").open(encoding="utf-8") as handle:
-        return str(json.load(handle)["version"])
+def read_tool_manifest() -> dict:
+    with (EXECUTA / "manifest.json").open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def archive_manifest(name: str, version: str, entrypoint: str) -> bytes:
+    """Root manifest.json the Anna Agent reads to locate the entrypoint."""
+    manifest = {
+        "name": name,
+        "version": version,
+        "runtime": {"binary": {
+            "entrypoint": entrypoint,
+            "permissions": {entrypoint: "0o755"},
+        }},
+    }
+    return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
 
 
 def package(platform: str) -> Path:
@@ -28,16 +42,26 @@ def package(platform: str) -> Path:
     if not windows:
         built.chmod(built.stat().st_mode | 0o111)
 
-    version = read_version()
+    tool = read_tool_manifest()
+    version = str(tool["version"])
+    entrypoint = f"bin/{executable}"
+    manifest = archive_manifest(str(tool["name"]), version, entrypoint)
     suffix = "zip" if windows else "tar.gz"
-    output = EXECUTA / "dist" / f"dnd-game-master-{version}-{platform}.{suffix}"
+    output = EXECUTA / "dist" / f"dnd-game-master-v{version}-{platform}.{suffix}"
     output.parent.mkdir(parents=True, exist_ok=True)
     if windows:
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.write(built, arcname=executable)
+            archive.writestr("manifest.json", manifest)
+            archive.write(built, arcname=entrypoint)
     else:
         with tarfile.open(output, "w:gz") as archive:
-            archive.add(built, arcname=executable)
+            info = tarfile.TarInfo("manifest.json")
+            info.size, info.mode = len(manifest), 0o644
+            archive.addfile(info, io.BytesIO(manifest))
+            folder = tarfile.TarInfo("bin")
+            folder.type, folder.mode = tarfile.DIRTYPE, 0o755
+            archive.addfile(folder)
+            archive.add(built, arcname=entrypoint)
 
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
     output.with_suffix(output.suffix + ".sha256").write_text(
