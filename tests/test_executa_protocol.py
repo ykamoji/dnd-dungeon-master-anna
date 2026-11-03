@@ -138,6 +138,8 @@ class ExecutaProtocolTests(unittest.TestCase):
         initialized = self.app.call("init", "initialize", {"protocolVersion": "2.0"})
         self.assertEqual(initialized["result"]["protocolVersion"], "2.0")
         self.assertIn("sampling", initialized["result"]["client_capabilities"])
+        self.assertEqual(initialized["result"]["capabilities"], {"sampling": {}})
+        self.assertEqual(initialized["result"]["server_info"]["name"], "dnd-game-master")
 
     def tearDown(self):
         self.app.close()

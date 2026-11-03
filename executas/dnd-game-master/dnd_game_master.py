@@ -30,7 +30,7 @@ from dnd_game_master_core.data import get_class_profiles
 
 
 APP_NAME = "dnd-game-master"
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
 VOICE_AUDIO_MODEL = "gemini-3.8-live"
 VOICE_TRANSCRIPTION_MODEL = "gemini-3.5-transcribe-live"
 VOICE_NAMES = {
@@ -419,8 +419,10 @@ def _handle_request(message: dict[str, Any]) -> None:
         result = {
             "protocolVersion": protocol_version if protocol_version in ("1.1", "2.0") else "2.0",
             "serverInfo": {"name": APP_NAME, "version": APP_VERSION},
+            "server_info": {"name": APP_NAME, "version": APP_VERSION},
             "client_capabilities": {"sampling": {}} if protocol_version == "2.0" else {},
-            "capabilities": {},
+            # Anna only mints a per-invoke sampling_token for plugins that list sampling here.
+            "capabilities": {"sampling": {}} if protocol_version == "2.0" else {},
         }
         SAMPLING.write(_response(request_id, result=result))
         return

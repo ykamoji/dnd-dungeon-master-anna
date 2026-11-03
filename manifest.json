@@ -40,6 +40,9 @@
         "get",
         "set",
         "delete"
+      ],
+      "llm": [
+        "complete"
       ]
     },
     "csp_overrides": {
