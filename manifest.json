@@ -49,8 +49,8 @@
       "script-src": [
         "'self'",
         "'sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo='",
-        "'sha256-NdqY7fprGT86DpgV6ip4ffQkCwT2oQwn75tYxu7VdEw='",
-        "'sha256-lSvN1BQOBOob3lMh5mJ+q1f5TABOLRo12qGdn656Iy4='",
+        "'sha256-QVC75Nt2d/7rKJf4gsuTG5MSDtVRMrx2swm5amaC1gY='",
+        "'sha256-j4PYdxQq7E02AgZYM2WIWGbRuaOnRoEDVQkAvy7AY1E='",
         "'sha256-+4yOhOk1jmvctixIWk4mKUhY4jPzVIR2acU7Y6bCAqc='",
         "'sha256-XQVuowzpfBuxwNAaVXoUoIx71ctqVzXSDqVGctP2HQA='"
       ]

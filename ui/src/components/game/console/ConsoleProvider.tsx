@@ -13,7 +13,7 @@ import {
 } from "react";
 import { useGame } from "@/context/GameContext";
 import { GAME_CATALOG } from "@/lib/games";
-import { createCampaign, getCampaignRecord, invokeTool, saveCampaignRecord, type CampaignRecord } from "@/lib/api";
+import { createCampaign, getCampaignRecord, invokeTool, saveCampaignRecord, traceToEvents, type CampaignRecord } from "@/lib/api";
 import type { SessionEvent, TurnSnapshot } from "@/lib/types";
 
 export type RunStatus = "idle" | "running" | "awaiting_approval" | "rejecting" | "error";
@@ -124,28 +124,14 @@ function toDraftSnapshot(draft: Record<string, any>): string {
 
 function pendingEvents(action: string, draft: Record<string, any>, invocationId: string): SessionEvent[] {
   const timestamp = Math.floor(Date.now() / 1000);
-  const trace: any[] = Array.isArray(draft.trace) ? draft.trace : [];
-  const events: SessionEvent[] = [
+  const trace = traceToEvents(draft.trace, invocationId, timestamp);
+  const last = trace.at(-1)?.timestamp ?? timestamp;
+  return [
     { id: invocationId + "-player", invocation_id: invocationId, timestamp, author: "user", content: { parts: [{ text: action }] } },
+    ...trace,
+    { id: invocationId + "-draft", invocation_id: invocationId, timestamp: last + 1, author: String(draft.last_agent?.at(-2) || "dnd_game_master_agent"), content: { parts: [{ text: String(draft.narrative || draft.narration || "The Dungeon Master has prepared a draft.") }] } },
+    { id: invocationId + "-approval", invocation_id: invocationId, timestamp: last + 2, author: "hitl_approval", content: { parts: [{ function_call: { name: "adk_request_input", args: { draft_id: draft.id } } }] } },
   ];
-  trace.forEach((entry, index) => {
-    const detail = String(entry.detail || entry.agent || "Working");
-    const part = entry.kind === "tool"
-      ? { function_call: { name: String(entry.agent || "tool"), args: {} } }
-      : { text: detail };
-    events.push({
-      id: invocationId + "-trace-" + index,
-      invocation_id: invocationId,
-      timestamp: timestamp + index + 1,
-      author: String(entry.agent || "dnd_game_master_agent"),
-      content: { parts: [part] },
-    });
-  });
-  events.push(
-    { id: invocationId + "-draft", invocation_id: invocationId, timestamp: timestamp + trace.length + 1, author: String(draft.last_agent?.at(-2) || "dnd_game_master_agent"), content: { parts: [{ text: String(draft.narrative || draft.narration || "The Dungeon Master has prepared a draft.") }] } },
-    { id: invocationId + "-approval", invocation_id: invocationId, timestamp: timestamp + trace.length + 2, author: "hitl_approval", content: { parts: [{ function_call: { name: "adk_request_input", args: { draft_id: draft.id } } }] } },
-  );
-  return events;
 }
 
 export function ConsoleProvider({ history, historyLoading, progress, summary, reloadHistory, campaignId, children }: ConsoleProviderProps) {

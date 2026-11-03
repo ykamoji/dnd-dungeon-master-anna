@@ -251,6 +251,11 @@ class ExecutaProtocolTests(unittest.TestCase):
         pending = pending_response["result"]["data"]
         self.assertEqual(pending["intent"], "ACTION")
         self.assertIn("action_evaluator", [item["agent"] for item in pending["trace"]])
+        tool_entries = {item["agent"]: item for item in pending["trace"] if item["kind"] == "tool"}
+        self.assertEqual(tool_entries["get_state"]["args"], {"campaign_id": created["id"]})
+        self.assertIn("scene_title", tool_entries["get_state"]["result"])
+        self.assertIn("query", tool_entries["fetch_campaign_files"]["args"])
+        self.assertIsInstance(tool_entries["fetch_campaign_files"]["result"], list)
         self.assertEqual(created["turn"], 0)
         self.assertEqual(len(created["events"]), 1)
 
@@ -295,6 +300,11 @@ class ExecutaProtocolTests(unittest.TestCase):
         self.assertEqual(approved["scene_title"], "Syndra's Study")
         narration_event = next(event for event in approved["events"] if event.get("kind") == "narration" and event.get("turn") == 1)
         self.assertEqual(narration_event["snapshot"]["dialogue"][0]["speaker"], "Syndra Silvane")
+        self.assertEqual(narration_event["author"], "npc_executor")
+        self.assertEqual(
+            [item["agent"] for item in narration_event["trace"]],
+            [item["agent"] for item in resumed_draft["trace"]],
+        )
         self.assertIn("dialogue", [event.get("kind") for event in approved["events"]])
         self.assertEqual(approved["state_notes"], [])
 

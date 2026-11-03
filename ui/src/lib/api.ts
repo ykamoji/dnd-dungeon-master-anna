@@ -367,17 +367,64 @@ export async function getLiveToken(opts?: { type?: "text" | "audio"; emotion?: s
   });
 }
 
+const toSeconds = (value: unknown, fallback: number) => {
+  const ms = new Date(String(value ?? "")).getTime();
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : fallback;
+};
+
+/**
+ * Expand an Executa trace into timeline events. Tool entries become a call
+ * event and a result event, matching the ADK stream the original client shows.
+ */
+export function traceToEvents(trace: unknown, invocationId: string, timestamp: number): SessionEvent[] {
+  const entries = Array.isArray(trace) ? trace as Array<Record<string, any>> : [];
+  const events: SessionEvent[] = [];
+  entries.forEach((entry, index) => {
+    const author = String(entry.agent || "dnd_game_master_agent");
+    const at = toSeconds(entry.created_at, timestamp + index + 1);
+    const id = invocationId + "-trace-" + index;
+    if (entry.kind !== "tool") {
+      events.push({ id, invocation_id: invocationId, timestamp: at, author, content: { parts: [{ text: String(entry.detail || author) }] } });
+      return;
+    }
+    const args = entry.args && typeof entry.args === "object" ? entry.args : {};
+    events.push({ id: id + "-call", invocation_id: invocationId, timestamp: at, author, content: { parts: [{ function_call: { name: author, args } }] } });
+    events.push({
+      id: id + "-result",
+      invocation_id: invocationId,
+      timestamp: at,
+      author,
+      content: { parts: [{ function_response: { name: author, response: entry.result ?? { detail: String(entry.detail || "") } } }] },
+    });
+  });
+  return events;
+}
+
 export async function getHistoricalEvents(campaignId: string, invocationId: string): Promise<SessionEvent[]> {
   const campaign = await getCampaignRecord(campaignId);
   if (!campaign) return [];
   const turn = Number(invocationId.replace(/^anna-turn-/, ""));
-  return campaign.events.filter((event) => Number(event.turn || 0) === turn).map((event, index) => ({
-    id: String(event.id || `${campaignId}-${turn}-${index}`),
-    invocation_id: invocationId,
-    timestamp: Math.floor(new Date(String(event.created_at || Date.now())).getTime() / 1000),
-    author: event.kind === "action" ? "user" : "dnd_game_master_agent",
-    content: { parts: [{ text: String(event.text || "") }] },
-  }));
+  const turnEvents = campaign.events.filter((event) => Number(event.turn || 0) === turn);
+  const action = turnEvents.find((event) => event.kind === "action");
+  const narration = [...turnEvents].reverse().find((event) => event.kind === "narration");
+  // Turns committed before traces were persisted fall back to the setup trace (turn 0) or nothing.
+  const trace = narration?.trace ?? (turn === 0 ? campaign.trace : undefined);
+  const start = toSeconds(action?.created_at ?? narration?.created_at, Math.floor(Date.now() / 1000));
+  const events: SessionEvent[] = [];
+  if (action) {
+    events.push({ id: String(action.id || `${invocationId}-player`), invocation_id: invocationId, timestamp: start, author: "user", content: { parts: [{ text: String(action.text || "") }] } });
+  }
+  events.push(...traceToEvents(trace, invocationId, start));
+  if (narration) {
+    events.push({
+      id: String(narration.id || `${invocationId}-narration`),
+      invocation_id: invocationId,
+      timestamp: toSeconds(narration.created_at, start + events.length),
+      author: String(narration.author || (turn === 0 ? "setup_agent" : "dnd_game_master_agent")),
+      content: { parts: [{ text: String(narration.text || "") }] },
+    });
+  }
+  return events;
 }
 
 export { campaignKey };

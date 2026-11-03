@@ -1,7 +1,7 @@
 {
   "slug": "dnd-game-master",
   "name": "D&D Game Master",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "executa_type": "tool",
   "description": "Anna-native multi-agent D&D game master with setup, safety guardrails, intent routing, combat/rules, NPC dialogue, adventure research, evaluation, approval, persistent campaign state, and optional Gemini Live voice.",
   "tool_id": "tool-dev-dnd-game-master",
