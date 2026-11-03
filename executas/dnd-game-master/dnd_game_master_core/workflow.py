@@ -59,8 +59,22 @@ def _parse_json(raw: Any) -> dict[str, Any]:
             value = json.loads(candidate[start:end + 1])
         except json.JSONDecodeError as exc:
             raise ValueError("The model did not return valid JSON.") from exc
+    # Some hosts return double-encoded JSON or wrap the object in a one-item array.
+    for _ in range(2):
+        if isinstance(value, str):
+            try:
+                value = json.loads(value.strip())
+            except json.JSONDecodeError:
+                break
+        elif isinstance(value, list) and len(value) == 1:
+            value = value[0]
+        else:
+            break
     if not isinstance(value, dict):
-        raise ValueError("The model response must be a JSON object.")
+        snippet = candidate[:160].replace("\n", " ")
+        raise ValueError(
+            f"The model response must be a JSON object (got {type(value).__name__}: {snippet!r})."
+        )
     return value
 
 
@@ -86,7 +100,21 @@ def _trim(value: Any, limit: int = MAX_STATE_CHARS) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)[:limit]
 
 
-def _trace(agent: str, kind: str, detail: str, iteration: int | None = None) -> dict[str, Any]:
+def _preview(value: Any, limit: int = 1500) -> Any:
+    """Keep trace payloads small enough to persist with every committed turn."""
+    text = json.dumps(value, ensure_ascii=False, default=str)
+    return value if len(text) <= limit else text[:limit] + "…"
+
+
+def _trace(
+    agent: str,
+    kind: str,
+    detail: str,
+    iteration: int | None = None,
+    *,
+    args: dict[str, Any] | None = None,
+    result: Any = None,
+) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "id": uuid.uuid4().hex,
         "agent": agent,
@@ -96,7 +124,36 @@ def _trace(agent: str, kind: str, detail: str, iteration: int | None = None) -> 
     }
     if iteration is not None:
         entry["iteration"] = iteration
+    if args is not None:
+        entry["args"] = _preview(args, 600)
+    if result is not None:
+        entry["result"] = _preview(result)
     return entry
+
+
+def _tool_trace(name: str, tools: dict[str, Any], campaign: dict[str, Any]) -> dict[str, Any]:
+    if name == "get_state":
+        state = tools.get("state") or {}
+        return _trace(
+            name, "tool", "Loaded the saved campaign state.",
+            args={"campaign_id": campaign.get("id")},
+            result={key: state.get(key) for key in ("scene_title", "turn", "progress", "quest_log", "party_breakdown")},
+        )
+    if name == "lookup_character":
+        characters = tools.get("characters") or []
+        return _trace(
+            name, "tool", f"Found {len(characters)} character records.",
+            args={"names": [item.get("name") for item in characters if isinstance(item, dict)]},
+            result=characters,
+        )
+    if name == "lookup_character_resource":
+        resources = tools.get("resources") or {}
+        return _trace(
+            name, "tool", f"Found {sum(len(v) for v in resources.values())} rules records.",
+            args={"resource_types": sorted(resources)},
+            result={kind: [item.get("name") for item in items] for kind, items in resources.items()},
+        )
+    return _trace(name, "tool", f"{name} returned campaign-specific context.")
 
 
 def _classify(action: str, sample: Sample, invoke_id: str) -> str:
@@ -150,8 +207,19 @@ def _run_story_agent(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     context = story_context(query, current_section)
     tool_trace = [
-        _trace("fetch_campaign_files", "tool", f"Retrieved {len(context['files'])} indexed adventure files."),
-        _trace("get_asset_url", "tool", f"Matched {len(context['assets'])} scene assets."),
+        _trace(
+            "fetch_campaign_files", "tool", f"Retrieved {len(context['files'])} indexed adventure files.",
+            args={"query": query, "current_section": current_section},
+            result=[
+                {key: item.get(key) for key in ("chapter", "section", "path")}
+                for item in context["files"] if isinstance(item, dict)
+            ],
+        ),
+        _trace(
+            "get_asset_url", "tool", f"Matched {len(context['assets'])} scene assets.",
+            args={"query": query},
+            result=context["assets"],
+        ),
     ]
     context_text = _trim(context, MAX_STORY_CHARS)
     result = _call_sample(
@@ -505,6 +573,13 @@ def create_campaign(
         "progress": 0.1,
     }
     now = _now()
+    trace = story_trace + [
+        _trace(
+            "lookup_character_resource", "tool", f"Loaded class records for {len(party)} party members.",
+            args={"resource_type": "classes", "names": [member.get("class") for member in party if isinstance(member, dict)]},
+            result=[{key: member.get(key) for key in ("name", "class", "role", "hp")} for member in party if isinstance(member, dict)],
+        ),
+    ] + setup_trace
     return {
         "id": _text(campaign_id, "", 80) or uuid.uuid4().hex,
         "game_id": _text(game_id, "", 80) or None,
@@ -537,13 +612,13 @@ def create_campaign(
                 "npc_name": "",
                 "dialogue": [],
             },
+            "author": "setup_agent",
+            "trace": trace,
             "created_at": now,
         }],
         "suggested_actions": metadata["suggested_actions"],
         "state_notes": [],
-        "trace": story_trace + [
-            _trace("lookup_character_resource", "tool", f"Loaded class records for {len(party)} party members."),
-        ] + setup_trace,
+        "trace": trace,
     }
 
 
@@ -574,7 +649,7 @@ def draft_turn(campaign: Any, action: str, invoke_id: str, dice: Any, sample: Sa
     intent = _classify(player_action, sample, invoke_id)
     trace.append(_trace("intent_classifier", "agent", f"Routed to {intent}."))
     tools, tool_names = gather_tool_results(player_action, campaign, intent)
-    trace.extend(_trace(name, "tool", f"{name} returned campaign-specific context.") for name in tool_names)
+    trace.extend(_tool_trace(name, tools, campaign) for name in tool_names)
 
     section = str((campaign.get("metadata") or {}).get("section") or campaign.get("scene_title") or "")
     story_query = (
@@ -657,7 +732,11 @@ def draft_turn(campaign: Any, action: str, invoke_id: str, dice: Any, sample: Sa
         feedback = _text(evaluation.get("comment"), "Address the player's request more clearly.", 1000)
 
     if normalized is None:
-        raise ValueError("The specialist could not produce a validated response after three attempts. Please rephrase the action and try again.")
+        reason = _text(feedback, "no reason recorded", 300)
+        raise ValueError(
+            "The specialist could not produce a validated response after three attempts. "
+            f"Last check: {reason} Please rephrase the action and try again."
+        )
 
     last_agents = ["input_guardrail", "intent_classifier", "story_agent", agent_name, evaluator_name]
     return {
@@ -679,6 +758,14 @@ def draft_turn(campaign: Any, action: str, invoke_id: str, dice: Any, sample: Sa
 
 def _apply_party(current: list[dict[str, Any]], updated: Any) -> list[dict[str, Any]]:
     return _normalize_party(current, updated)
+
+
+def _draft_author(draft: dict[str, Any]) -> str:
+    """The specialist that wrote the draft (last_agent ends with its evaluator)."""
+    agents = draft.get("last_agent")
+    if isinstance(agents, list) and len(agents) >= 2:
+        return _text(agents[-2], "dnd_game_master_agent", 80)
+    return "dnd_game_master_agent"
 
 
 def resolve_turn(campaign: Any, draft: Any, approved: bool) -> dict[str, Any]:
@@ -733,6 +820,8 @@ def resolve_turn(campaign: Any, draft: Any, approved: bool) -> dict[str, Any]:
         "text": _text(snapshot["narrative"], "", 5000),
         "suggested_actions": snapshot["suggested_actions"],
         "snapshot": snapshot,
+        "author": _draft_author(draft),
+        "trace": draft.get("trace") if isinstance(draft.get("trace"), list) else [],
         "created_at": now,
     })
     if draft.get("math_breakdown"):

@@ -1,7 +1,7 @@
 {
   "name": "dnd-game-master",
   "display_name": "D&D Game Master",
-  "version": "0.2.0",
+  "version": "0.2.3",
   "description": "Anna-native multi-agent D&D game master with setup, safety guardrails, intent routing, combat/rules, NPC dialogue, adventure research, evaluation, approval, persistent campaign state, and optional Gemini Live voice.",
   "author": "Yash",
   "host_capabilities": [
@@ -21,83 +21,6 @@
       "description": "Optional Anna-specific voice credential. Used only by voice_token to issue a short-lived Gemini Live token; takes precedence over GOOGLE_API_KEY and is never returned or logged.",
       "required": false,
       "sensitive": true
-    },
-    {
-      "name": "GOOGLE_MODEL",
-      "display_name": "Original Google model setting",
-      "description": "Present in the original Cloud Run environment file for the ADK backend. Unused by the Anna runtime, which uses Anna llm.sample.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "SMART_MODEL",
-      "display_name": "Original smart model setting",
-      "description": "Present in the original Cloud Run environment file for the ADK backend. Unused by the Anna runtime, which uses Anna llm.sample.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "USE_LOCAL_LLM",
-      "display_name": "Original local LLM toggle",
-      "description": "Original Cloud Run ADK setting. Unused by the Anna runtime; model calls are handled through Anna llm.sample.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "SESSION_DB_LOCAL",
-      "display_name": "Original local session database toggle",
-      "description": "Original Cloud Run ADK session-store setting. Unused by the Anna runtime.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "MONGO_URI",
-      "display_name": "Original MongoDB URI",
-      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime, which stores campaigns through Anna user-scoped storage.",
-      "required": false,
-      "sensitive": true
-    },
-    {
-      "name": "DB_NAME",
-      "display_name": "Original MongoDB database name",
-      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "CAMPAIGN_COLLECTION",
-      "display_name": "Original campaign collection name",
-      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "SESSION_COLLECTION",
-      "display_name": "Original session collection name",
-      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "EVENT_COLLECTION",
-      "display_name": "Original event collection name",
-      "description": "Original Cloud Run ADK database setting. Unused by the Anna runtime.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "LOG_LEVEL",
-      "display_name": "Original backend log level",
-      "description": "Original Cloud Run ADK/FastAPI logging setting. Unused by the Anna runtime.",
-      "required": false,
-      "sensitive": false
-    },
-    {
-      "name": "ALLOW_ORIGINS",
-      "display_name": "Original backend CORS origins",
-      "description": "Original Cloud Run FastAPI CORS setting. Unused by the static Anna app and bundled Executa.",
-      "required": false,
-      "sensitive": false
     }
   ],
   "tools": [

@@ -1,10 +1,10 @@
 {
   "name": "D&D Dungeon Master",
   "slug": "dnd-dungeon-master",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "tagline": "Build a party. Choose your adventure.",
-  "description": "A Dungeons & Dragons campaign app. Create a party, play through a published adventure with Anna's AI, approve each story turn, and resume your campaign across devices.",
-  "category": "games",
+  "description": "D&D Dungeon Master turns Anna into a full tabletop game master for Dungeons & Dragons (5th edition). Bring a premise and a party, and Anna runs the story, the rules, and the world around you — no prep, no rulebooks, no group scheduling required.\n\nBuild your party: create up to six adventurers, each with a name, ancestry, and class. Class profiles and archetypes come from the Open5e reference data, so every hero starts with real hit points, armor class, and abilities.\n\nPlay a real adventure: the playable campaign is set in the jungles of Chult from the Tomb of Annihilation adventure, starting in Port Nyanzaru. The game master looks up the bundled chapters, locations, random encounter tables, and NPC appendix before each turn, so scenes, characters, and threats stay faithful to the source. Princes of the Apocalypse and Hoard of the Dragon Queen are listed as coming soon.\n\nEvery turn is a team of specialists: describe what your party does in plain language. A safety guardrail screens the input, an intent classifier routes it to the action and combat, NPC dialogue, or campaign specialist, and an evaluator checks the result against the rules and the story before you see it.\n\nYou stay in control: each turn arrives as a draft with its narration, ability checks, and story changes. Approve it to make it canon, or reject it and nothing changes. Roll your own d20 and d100 in the dice tray when the story calls for it.\n\nA console built for play: a three-pane game screen with a scene and event reader, party stats (health, armor class, initiative, perception, gold, and level), a journey rail of past events, and switchable layouts.\n\nPick up where you left off: campaigns save automatically to your Anna account and can be resumed at any time from the campaign list.\n\nOptional voice: add your own Gemini API key in the tool settings to speak your actions with the microphone and hear spoken replies. Voice is off by default, and the app works fully without it.\n\nFree to play. Story generation runs on Anna's built-in AI, so no API key or account outside Anna is needed for the core game.",
+  "category": "entertainment",
   "pricing_model": "free",
   "author": "Yash",
   "bundled_executas": {

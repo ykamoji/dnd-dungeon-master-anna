@@ -30,7 +30,7 @@ from dnd_game_master_core.data import get_class_profiles
 
 
 APP_NAME = "dnd-game-master"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.3"
 VOICE_AUDIO_MODEL = "gemini-3.8-live"
 VOICE_TRANSCRIPTION_MODEL = "gemini-3.5-transcribe-live"
 VOICE_NAMES = {
@@ -79,6 +79,9 @@ class SamplingBridge:
         self._pending_lock = threading.Lock()
         self._pending: dict[str, queue.Queue[dict[str, Any]]] = {}
         self.enabled = False
+        # Hosts that never send `initialize` (the local `anna-app dev` harness) are given the
+        # benefit of the doubt; only a host that negotiated a non-2.0 protocol is refused.
+        self.negotiated = False
         self.disabled_reason = "Anna sampling was not negotiated. Reconnect through an Anna v2 host."
 
     def write(self, frame: dict[str, Any]) -> None:
@@ -88,6 +91,7 @@ class SamplingBridge:
             sys.stdout.flush()
 
     def negotiate(self, protocol_version: str) -> None:
+        self.negotiated = True
         self.enabled = protocol_version == "2.0"
         if self.enabled:
             self.disabled_reason = ""
@@ -113,7 +117,7 @@ class SamplingBridge:
         max_tokens: int = 1200,
         timeout: float = 30.0,
     ) -> str:
-        if not self.enabled:
+        if self.negotiated and not self.enabled:
             raise ExecutaError(self.disabled_reason, code=-32008)
 
         request_id = uuid.uuid4().hex
@@ -373,7 +377,8 @@ def _invoke(params: dict[str, Any]) -> dict[str, Any]:
     if tool_name == "create_campaign":
         data = create_campaign(arguments.get("name", ""), arguments.get("premise", ""), arguments.get("party"), invoke_id, arguments.get("campaign_id"), arguments.get("game_id"))
     elif tool_name == "get_class_profiles":
-        data = get_class_profiles()
+        # The Anna host turns a bare list result into `{}`, so wrap it in an object.
+        data = {"classes": get_class_profiles()}
     elif tool_name == "draft_turn":
         data = draft_turn(arguments.get("campaign"), arguments.get("action", ""), invoke_id, arguments.get("dice"))
     elif tool_name == "resolve_turn":
@@ -414,8 +419,10 @@ def _handle_request(message: dict[str, Any]) -> None:
         result = {
             "protocolVersion": protocol_version if protocol_version in ("1.1", "2.0") else "2.0",
             "serverInfo": {"name": APP_NAME, "version": APP_VERSION},
+            "server_info": {"name": APP_NAME, "version": APP_VERSION},
             "client_capabilities": {"sampling": {}} if protocol_version == "2.0" else {},
-            "capabilities": {},
+            # Anna only mints a per-invoke sampling_token for plugins that list sampling here.
+            "capabilities": {"sampling": {}} if protocol_version == "2.0" else {},
         }
         SAMPLING.write(_response(request_id, result=result))
         return
@@ -465,6 +472,10 @@ def _handle_line(line: str, pool: Any) -> None:
 
 
 def main() -> None:
+    # The protocol is UTF-8 JSON; Windows would otherwise default to the ANSI code page
+    # and fail to encode characters such as "ā" in the bundled game data.
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     print(f"{APP_NAME} Executa started", file=sys.stderr, flush=True)
     from concurrent.futures import ThreadPoolExecutor
 

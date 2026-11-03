@@ -31,6 +31,7 @@ class ExecutaProcess:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             bufsize=1,
             env=env,
         )
@@ -137,6 +138,8 @@ class ExecutaProtocolTests(unittest.TestCase):
         initialized = self.app.call("init", "initialize", {"protocolVersion": "2.0"})
         self.assertEqual(initialized["result"]["protocolVersion"], "2.0")
         self.assertIn("sampling", initialized["result"]["client_capabilities"])
+        self.assertEqual(initialized["result"]["capabilities"], {"sampling": {}})
+        self.assertEqual(initialized["result"]["server_info"]["name"], "dnd-game-master")
 
     def tearDown(self):
         self.app.close()
@@ -151,7 +154,7 @@ class ExecutaProtocolTests(unittest.TestCase):
         profiles_response = self.app.call(
             "classes", "invoke", {"tool": "get_class_profiles", "arguments": {}}
         )
-        profiles = profiles_response["result"]["data"]
+        profiles = profiles_response["result"]["data"]["classes"]
         self.assertEqual(len(profiles), 12)
         ranger = next(profile for profile in profiles if profile["name"] == "Ranger")
         self.assertTrue(ranger["slug"])
@@ -248,6 +251,11 @@ class ExecutaProtocolTests(unittest.TestCase):
         pending = pending_response["result"]["data"]
         self.assertEqual(pending["intent"], "ACTION")
         self.assertIn("action_evaluator", [item["agent"] for item in pending["trace"]])
+        tool_entries = {item["agent"]: item for item in pending["trace"] if item["kind"] == "tool"}
+        self.assertEqual(tool_entries["get_state"]["args"], {"campaign_id": created["id"]})
+        self.assertIn("scene_title", tool_entries["get_state"]["result"])
+        self.assertIn("query", tool_entries["fetch_campaign_files"]["args"])
+        self.assertIsInstance(tool_entries["fetch_campaign_files"]["result"], list)
         self.assertEqual(created["turn"], 0)
         self.assertEqual(len(created["events"]), 1)
 
@@ -292,6 +300,11 @@ class ExecutaProtocolTests(unittest.TestCase):
         self.assertEqual(approved["scene_title"], "Syndra's Study")
         narration_event = next(event for event in approved["events"] if event.get("kind") == "narration" and event.get("turn") == 1)
         self.assertEqual(narration_event["snapshot"]["dialogue"][0]["speaker"], "Syndra Silvane")
+        self.assertEqual(narration_event["author"], "npc_executor")
+        self.assertEqual(
+            [item["agent"] for item in narration_event["trace"]],
+            [item["agent"] for item in resumed_draft["trace"]],
+        )
         self.assertIn("dialogue", [event.get("kind") for event in approved["events"]])
         self.assertEqual(approved["state_notes"], [])
 

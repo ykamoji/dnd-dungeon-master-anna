@@ -28,8 +28,14 @@ const garamond = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "D&D Dungeon Master Assistant",
+  title: "D&D Dungeon Master",
   description: "An AI-powered Dungeon Master. Forge a party, choose your adventure, and play.",
+  // Relative paths keep the icon working under Anna's static bundle prefix.
+  icons: {
+    icon: [
+      { url: "logos/d20.png", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
