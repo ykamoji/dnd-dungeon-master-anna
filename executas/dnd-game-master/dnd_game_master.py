@@ -79,6 +79,9 @@ class SamplingBridge:
         self._pending_lock = threading.Lock()
         self._pending: dict[str, queue.Queue[dict[str, Any]]] = {}
         self.enabled = False
+        # Hosts that never send `initialize` (the local `anna-app dev` harness) are given the
+        # benefit of the doubt; only a host that negotiated a non-2.0 protocol is refused.
+        self.negotiated = False
         self.disabled_reason = "Anna sampling was not negotiated. Reconnect through an Anna v2 host."
 
     def write(self, frame: dict[str, Any]) -> None:
@@ -88,6 +91,7 @@ class SamplingBridge:
             sys.stdout.flush()
 
     def negotiate(self, protocol_version: str) -> None:
+        self.negotiated = True
         self.enabled = protocol_version == "2.0"
         if self.enabled:
             self.disabled_reason = ""
@@ -113,7 +117,7 @@ class SamplingBridge:
         max_tokens: int = 1200,
         timeout: float = 30.0,
     ) -> str:
-        if not self.enabled:
+        if self.negotiated and not self.enabled:
             raise ExecutaError(self.disabled_reason, code=-32008)
 
         request_id = uuid.uuid4().hex
