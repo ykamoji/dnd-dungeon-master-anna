@@ -31,6 +31,7 @@ class ExecutaProcess:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             bufsize=1,
             env=env,
         )

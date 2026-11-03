@@ -466,6 +466,10 @@ def _handle_line(line: str, pool: Any) -> None:
 
 
 def main() -> None:
+    # The protocol is UTF-8 JSON; Windows would otherwise default to the ANSI code page
+    # and fail to encode characters such as "ā" in the bundled game data.
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     print(f"{APP_NAME} Executa started", file=sys.stderr, flush=True)
     from concurrent.futures import ThreadPoolExecutor
 
