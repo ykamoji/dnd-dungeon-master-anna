@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useGame } from "@/context/GameContext";
 import { useCampaigns } from "@/hooks/useCampaigns";
-import { deleteCampaign } from "@/lib/api";
+import { deleteCampaign, friendlyError } from "@/lib/api";
 import { GAME_CATALOG } from "@/lib/games";
 
 // Fallback cover when a saved campaign has no asset art yet.
@@ -26,17 +26,18 @@ export function ResumeView() {
   const { campaigns, loading, error, reload } = useCampaigns();
   const [campaignToDelete, setCampaignToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const confirmDelete = async () => {
     if (!campaignToDelete) return;
     setIsDeleting(true);
+    setDeleteError(null);
     try {
       await deleteCampaign(campaignToDelete.id);
       setCampaignToDelete(null);
       reload();
     } catch (e) {
-      console.error(e);
-      alert("Failed to delete campaign.");
+      setDeleteError(friendlyError(e, "The campaign could not be deleted. Please try again."));
     } finally {
       setIsDeleting(false);
     }
@@ -65,9 +66,10 @@ export function ResumeView() {
         </div>
       )}
       {error && (
-        <p className="text-center text-blood-bright px-6">
-          Could not load campaigns: {error}
-        </p>
+        <div className="flex flex-col items-center gap-3 px-6 text-center" role="alert">
+          <p className="text-blood-bright">Your saved campaigns could not be loaded. {error}</p>
+          <Button variant="secondary" onClick={reload}>Try Again</Button>
+        </div>
       )}
       {!loading && !error && campaigns.length === 0 && (
         <p className="text-center font-rune text-parchment-dim px-6">
@@ -106,7 +108,7 @@ export function ResumeView() {
         open={campaignToDelete !== null}
         title="Delete Campaign"
         size="xs"
-        onClose={() => !isDeleting && setCampaignToDelete(null)}
+        onClose={() => { if (!isDeleting) { setCampaignToDelete(null); setDeleteError(null); } }}
         footer={
           <>
             <Button variant="secondary" onClick={() => setCampaignToDelete(null)} disabled={isDeleting}>
@@ -123,6 +125,7 @@ export function ResumeView() {
           <span className="text-gold-bright">{campaignToDelete?.name}</span>? This
           action cannot be undone.
         </p>
+        {deleteError && <p role="alert" className="mt-3 text-blood-bright">{deleteError}</p>}
       </Modal>
     </SectionShell>
   );

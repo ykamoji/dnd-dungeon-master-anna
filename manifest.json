@@ -49,10 +49,10 @@
       "script-src": [
         "'self'",
         "'sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo='",
-        "'sha256-QVC75Nt2d/7rKJf4gsuTG5MSDtVRMrx2swm5amaC1gY='",
-        "'sha256-j4PYdxQq7E02AgZYM2WIWGbRuaOnRoEDVQkAvy7AY1E='",
-        "'sha256-+4yOhOk1jmvctixIWk4mKUhY4jPzVIR2acU7Y6bCAqc='",
-        "'sha256-XQVuowzpfBuxwNAaVXoUoIx71ctqVzXSDqVGctP2HQA='"
+        "'sha256-YHFTjSUTh0d+hg4DzPtYfjYsP+LvWNWbG+oKt8ffvtY='",
+        "'sha256-TFQIjJjxIkEVXOJmvsEQXInfXPaxwNL8vMwMfYHTgCU='",
+        "'sha256-E7rC4mqDTMqvvA3OJF3uSPVwnekVy5o+uXPcIZzl1k4='",
+        "'sha256-JTn6clz00yxIcPcDFh0zRVdRYaUK6kgJQ01XvMqICBk='"
       ]
     }
   }

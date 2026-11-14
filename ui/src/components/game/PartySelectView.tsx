@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Loader } from "@/components/ui/Loader";
@@ -28,10 +28,13 @@ const emptyMember = (): PartyMember => ({
 /** New-campaign step 2: assemble the party, then dissolve into the console. */
 export function PartySelectView() {
   const { state, dispatch } = useGame();
-  const { classes, loading, error } = useClasses();
+  const { classes, loading, error, reload } = useClasses();
   const [dnaClass, setDnaClass] = useState<string | null>(null);
 
-  const party = state.party.length ? state.party : [emptyMember()];
+  // One stable placeholder row: a fresh id per render made every edit miss.
+  const placeholderRef = useRef<PartyMember | null>(null);
+  if (!placeholderRef.current) placeholderRef.current = emptyMember();
+  const party = state.party.length ? state.party : [placeholderRef.current];
 
   const setParty = (next: PartyMember[]) =>
     dispatch({ type: "SET_PARTY", party: next });
@@ -39,11 +42,14 @@ export function PartySelectView() {
   const updateMember = (m: PartyMember) =>
     dispatch({ type: "UPDATE_PARTY_MEMBER", member: m });
 
-  const removeMember = (id: string) =>
-    setParty(party.filter((p) => p.id !== id));
+  const removeMember = (id: string) => {
+    placeholderRef.current = emptyMember();
+    setParty(state.party.filter((p) => p.id !== id));
+  };
 
   const addMember = () => {
     if (party.length < MAX_PARTY) setParty([...party, emptyMember()]);
+    placeholderRef.current = emptyMember();
   };
 
   const atMax = party.length >= MAX_PARTY;
@@ -66,9 +72,10 @@ export function PartySelectView() {
         </div>
       )}
       {error && (
-        <p className="text-center text-blood-bright">
-          Could not load classes: {error}
-        </p>
+        <div className="flex flex-col items-center gap-3 py-8 text-center" role="alert">
+          <p className="text-blood-bright">The class list could not be loaded. {error}</p>
+          <Button variant="secondary" onClick={reload}>Try Again</Button>
+        </div>
       )}
 
       {!loading && !error && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getCampaigns } from "@/lib/api";
+import { friendlyError, getCampaigns } from "@/lib/api";
 import type { CampaignSummary } from "@/lib/types";
 
 interface UseCampaignsResult {
@@ -28,7 +28,7 @@ export function useCampaigns(): UseCampaignsResult {
         }
       })
       .catch((e: unknown) => {
-        if (active) setError(e instanceof Error ? e.message : "Failed to load campaigns");
+        if (active) setError(friendlyError(e, "Please try again."));
       })
       .finally(() => {
         if (active) setLoading(false);

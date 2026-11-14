@@ -139,11 +139,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case "SET_PARTY":
       return { ...state, party: action.party };
     case "UPDATE_PARTY_MEMBER":
+      // Upsert: the first, placeholder row is not in state until it is edited.
       return {
         ...state,
-        party: state.party.map((p) =>
-          p.id === action.member.id ? action.member : p
-        ),
+        party: state.party.some((p) => p.id === action.member.id)
+          ? state.party.map((p) => (p.id === action.member.id ? action.member : p))
+          : [...state.party, action.member],
       };
     case "PRELOAD_PARTY":
       return {

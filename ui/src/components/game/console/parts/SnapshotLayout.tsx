@@ -11,6 +11,7 @@ import { intentMeta } from "../snapshot";
 import { useConsole } from "../ConsoleProvider";
 import { SpeakButton } from "@/components/voice/SpeakButton";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useVoiceAvailable } from "@/hooks/useVoiceAvailable";
 import { resolveVoiceName } from "@/lib/voices";
 import type { CombatEntry, DialogueLine, TurnSnapshot } from "@/lib/types";
 
@@ -31,6 +32,7 @@ function DialogueBlock({
   turnKey: string;
 }) {
   const { activeKey, status, error, toggle } = useTextToSpeech();
+  const voiceAvailable = useVoiceAvailable();
   return (
     <div className="space-y-2">
       {lines.map((d, i) => {
@@ -39,7 +41,11 @@ function DialogueBlock({
         const key = `${turnKey}:${i}:${d.emotion ?? ""}:${voiceName}`;
         const lineStatus = activeKey === key ? status : "idle";
         return (
-          <p key={i} className="font-body text-parchment cursor-pointer select-none" onClick={() => toggle(key, d.text, d.emotion, voiceName)}>
+          <p
+            key={i}
+            className={`font-body text-parchment ${voiceAvailable ? "cursor-pointer select-none" : ""}`}
+            onClick={voiceAvailable ? () => toggle(key, d.text, d.emotion, voiceName) : undefined}
+          >
             <span className="font-display text-sm text-gold-bright">{d.speaker}</span>
             ({d.emotion && (
               <span className="font-rune text-xs text-parchment-dim"> {d.emotion}</span>
@@ -48,16 +54,14 @@ function DialogueBlock({
               <span className="font-rune text-xs text-parchment-dim">, {d.gender}</span>
             )})
             <span className="text-parchment-dim">: </span>
-            <SpeakButton
-              status={lineStatus}
-            />
+            {voiceAvailable && <SpeakButton status={lineStatus} />}
             <br />
             <span className="italic">{d.text}</span>
           </p>
         );
       })}
-      {error && (
-        <p className="mt-1 font-body text-xs text-blood-bright">{error}</p>
+      {voiceAvailable && error && (
+        <p role="alert" className="mt-1 font-body text-xs text-blood-bright">{error}</p>
       )}
     </div>
   );

@@ -23,6 +23,8 @@ export function GameMasterPanel({ orientation = "hero" }: GameMasterPanelProps) 
     error,
     submitTurn,
     setComposerDraft,
+    dismissError,
+    retrySetup,
   } = useConsole();
 
   const [rolls, setRolls] = useState<DiceRolls>(NO_ROLLS);
@@ -42,8 +44,28 @@ export function GameMasterPanel({ orientation = "hero" }: GameMasterPanelProps) 
   return (
     <div>
       {error && (
-        <div className="absolute bottom-[860px] left-1/3 mt-1 rounded-card border border-blood-bright/50 bg-blood px-3 py-2 text-md text-gold">
-          {error}
+        <div
+          role="alert"
+          className="fixed left-1/2 top-16 z-50 flex max-w-[min(90vw,40rem)] -translate-x-1/2 items-center gap-3 rounded-card border border-blood-bright/50 bg-blood px-4 py-2 text-md text-gold shadow-lg"
+        >
+          <span>{error}</span>
+          {retrySetup && (
+            <button
+              type="button"
+              onClick={retrySetup}
+              className="shrink-0 cursor-pointer rounded-md border border-gold/50 px-2 py-1 font-display text-xs uppercase tracking-wider hover:bg-gold/10"
+            >
+              Try again
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={dismissError}
+            aria-label="Dismiss message"
+            className="shrink-0 cursor-pointer px-1 text-lg leading-none text-gold/80 hover:text-gold-bright"
+          >
+            ✕
+          </button>
         </div>
       )}
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GoogleGenAI, type LiveServerMessage, type Session } from "@google/genai";
-import { getLiveToken } from "@/lib/api";
+import { friendlyError, getLiveToken } from "@/lib/api";
 
 // Gemini Live returns 24 kHz mono PCM audio.
 const OUTPUT_SAMPLE_RATE = 24000;
@@ -356,7 +356,8 @@ export function useTextToSpeech(): UseTextToSpeech {
       } catch (err) {
         if ((err as Error).message === "aborted") return;
         if (runIdRef.current === runId) {
-          setError(err instanceof Error ? err.message : "Could not start playback");
+          console.error(err);
+          setError(friendlyError(err, "The voice line could not be played. Please try again."));
           stop();
         }
       }

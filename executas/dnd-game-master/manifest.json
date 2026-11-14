@@ -1,7 +1,7 @@
 {
   "name": "dnd-game-master",
   "display_name": "D&D Game Master",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Anna-native multi-agent D&D game master with setup, safety guardrails, intent routing, combat/rules, NPC dialogue, adventure research, evaluation, approval, persistent campaign state, and optional Gemini Live voice.",
   "author": "Yash",
   "host_capabilities": [
@@ -117,6 +117,12 @@
       "description": "Return the original Open5e D&D class profiles and archetypes used by the production party builder.",
       "parameters": [],
       "timeout": 20
+    },
+    {
+      "name": "voice_status",
+      "description": "Report whether optional Gemini Live voice is configured, so the app can hide voice controls when it is not. Never returns the credential.",
+      "parameters": [],
+      "timeout": 10
     },
     {
       "name": "voice_token",

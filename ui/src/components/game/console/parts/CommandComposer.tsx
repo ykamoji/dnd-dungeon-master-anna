@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { MicButton } from "@/components/voice/MicButton";
 import { VoiceWaveform } from "@/components/voice/VoiceWaveform";
+import { useVoiceAvailable } from "@/hooks/useVoiceAvailable";
 import { useVoiceTranscription } from "@/hooks/useVoiceTranscription";
 
 interface CommandComposerProps {
@@ -35,6 +36,9 @@ export function CommandComposer({
   const { listening, connecting, error, start, stop } = useVoiceTranscription({
     onTranscript: handleTranscript,
   });
+
+  // Voice is optional: the mic stays hidden until a key is configured.
+  const voiceAvailable = useVoiceAvailable();
 
   const toggleVoice = () => {
     if (listening || connecting) stop();
@@ -69,18 +73,20 @@ export function CommandComposer({
             </div>
           )}
         </div>
-        <MicButton
-          listening={listening}
-          connecting={connecting}
-          disabled={disabled}
-          onClick={toggleVoice}
-        />
+        {voiceAvailable && (
+          <MicButton
+            listening={listening}
+            connecting={connecting}
+            disabled={disabled}
+            onClick={toggleVoice}
+          />
+        )}
         <Button onClick={onSubmit} disabled={disabled || !value.trim()} size="md" className="h-15 w-15 mt-[5px] shrink-0" >
           Send
         </Button>
       </div>
-      {error && (
-        <p className="px-1 font-body text-sm text-blood-bright">{error}</p>
+      {voiceAvailable && error && (
+        <p role="alert" className="px-1 font-body text-sm text-blood-bright">{error}</p>
       )}
     </div>
   );
