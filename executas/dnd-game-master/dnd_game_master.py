@@ -30,7 +30,7 @@ from dnd_game_master_core.data import get_class_profiles
 
 
 APP_NAME = "dnd-game-master"
-APP_VERSION = "0.2.3"
+APP_VERSION = "0.2.4"
 VOICE_AUDIO_MODEL = "gemini-3.8-live"
 VOICE_TRANSCRIPTION_MODEL = "gemini-3.5-transcribe-live"
 VOICE_NAMES = {
@@ -263,7 +263,7 @@ def _voice_api_key(credentials: Any) -> str | None:
         value = os.environ.get(key)
         if value and value.strip():
             return value.strip()
-    if getattr(sys, "frozen", False):
+    if getattr(sys, "frozen", False) or os.environ.get("DND_GM_NO_DOTENV"):
         return None
 
     # Local-only convenience: read only the voice key from the ignored .env.
@@ -296,7 +296,7 @@ def issue_voice_token(
     api_key = _voice_api_key(credentials)
     if not isinstance(api_key, str) or not api_key.strip():
         raise ExecutaError(
-            "Voice is not configured yet. Add a GEMINI_API_KEY credential to the bundled Executa."
+            "Voice is turned off. Add a GEMINI_API_KEY credential in the tool settings to enable it."
         )
 
     mode = mode if isinstance(mode, str) and mode in ("text", "audio") else "text"
@@ -385,6 +385,9 @@ def _invoke(params: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(arguments.get("approved"), bool):
             raise ExecutaError("'approved' must be true or false.", -32602)
         data = resolve_turn(arguments.get("campaign"), arguments.get("draft"), arguments["approved"])
+    elif tool_name == "voice_status":
+        # Lets the UI hide voice controls until a key is configured; never returns the key.
+        data = {"configured": bool(_voice_api_key(context.get("credentials")))}
     elif tool_name == "voice_token":
         data = issue_voice_token(
             context.get("credentials"),

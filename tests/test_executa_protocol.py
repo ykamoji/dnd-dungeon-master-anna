@@ -24,6 +24,8 @@ class ExecutaProcess:
         env = os.environ.copy()
         env.pop("GEMINI_API_KEY", None)
         env.pop("GOOGLE_API_KEY", None)
+        # Keep a developer's local .env voice key out of the tests.
+        env["DND_GM_NO_DOTENV"] = "1"
         self.process = subprocess.Popen(
             [sys.executable, "dnd_game_master.py"],
             cwd=EXECUTA,
@@ -149,7 +151,7 @@ class ExecutaProtocolTests(unittest.TestCase):
         self.assertEqual(manifest["name"], "dnd-game-master")
         self.assertEqual(
             {tool["name"] for tool in manifest["tools"]},
-            {"create_campaign", "get_class_profiles", "draft_turn", "resolve_turn", "voice_token"},
+            {"create_campaign", "get_class_profiles", "draft_turn", "resolve_turn", "voice_status", "voice_token"},
         )
         profiles_response = self.app.call(
             "classes", "invoke", {"tool": "get_class_profiles", "arguments": {}}
@@ -452,11 +454,42 @@ class ExecutaProtocolTests(unittest.TestCase):
     def test_voice_missing_key_and_invalid_game_state_are_actionable(self):
         voice = self.app.call("voice", "invoke", {"tool": "voice_token", "arguments": {}, "context": {}})
         self.assertIn("GEMINI_API_KEY", voice["error"]["message"])
+        status = self.app.call("voice-status", "invoke", {"tool": "voice_status", "arguments": {}, "context": {}})
+        self.assertEqual(status["result"]["data"], {"configured": False})
+        configured = self.app.call("voice-status-2", "invoke", {
+            "tool": "voice_status", "arguments": {}, "context": {"credentials": {"GEMINI_API_KEY": "unit-test-secret"}},
+        })
+        self.assertEqual(configured["result"]["data"], {"configured": True})
         invalid = self.app.call("empty-action", "invoke", {
             "tool": "draft_turn",
             "arguments": {"campaign": {"id": "campaign-1"}, "action": " "},
         })
         self.assertIn("Describe what the party wants to do", invalid["error"]["message"])
+
+
+    def test_malformed_model_replies_are_retried_and_reported_without_internals(self):
+        from dnd_game_master_core import workflow
+
+        replies = iter(["Sure! Here is the scene.", "[1, 2]", '[{"found": true}]'])
+        calls = []
+
+        def sample(**kwargs):
+            calls.append(kwargs["user_prompt"])
+            return next(replies)
+
+        self.assertEqual(workflow._call_sample(sample, "i", "story_agent", "sys", "ask"), {"found": True})
+        self.assertEqual(len(calls), 3)
+        self.assertIn("could not be parsed", calls[1])
+
+        with self.assertRaises(ValueError) as raised:
+            workflow._call_sample(lambda **_: "42", "i", "story_agent", "sys", "ask")
+        message = str(raised.exception)
+        self.assertIn("Please try again", message)
+        self.assertNotIn("JSON", message)
+
+        # The optional lore synthesis falls back to the retrieved excerpts.
+        story, _ = workflow._run_story_agent("death curse", "Port Nyanzaru", lambda **_: "not json", "i")
+        self.assertIn("assets", story)
 
 
 if __name__ == "__main__":

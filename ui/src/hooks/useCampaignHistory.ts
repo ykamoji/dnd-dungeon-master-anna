@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getCampaign } from "@/lib/api";
+import { friendlyError, getCampaign } from "@/lib/api";
 import type { TurnSnapshot } from "@/lib/types";
 
 interface UseCampaignHistoryResult {
@@ -55,7 +55,7 @@ export function useCampaignHistory(
           setHistory([]);
           setError(null);
         } else {
-          setError(msg || "Failed to load campaign history");
+          setError(friendlyError(e, "The campaign history could not be loaded. Please reload."));
         }
       })
       .finally(() => {

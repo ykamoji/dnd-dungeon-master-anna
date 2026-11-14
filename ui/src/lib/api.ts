@@ -104,11 +104,50 @@ async function getRuntime(): Promise<{ anna: AnnaRuntime; preview: boolean }> {
         return { anna: await AnnaAppRuntime.connect() as AnnaRuntime, preview: false };
       } catch (error) {
         console.error("Could not connect to the Anna app runtime.", error);
-        throw new Error("Could not connect to Anna. Open this app from Anna or use ?preview=1 for a local UI preview.");
+        runtimePromise = null;
+        throw new Error("Could not connect to Anna. Please reload the app and try again.");
       }
     })();
   }
   return runtimePromise;
+}
+
+const GENERIC_ERROR = "Something went wrong. Please try again.";
+
+/**
+ * Turn anything thrown by the Anna host, the Executa or the browser into one
+ * plain sentence. The host reports tool failures as a stringified dict such as
+ * `invoke error: {'code': -32603, 'message': '…'}`; only the message is shown.
+ */
+export function friendlyError(error: unknown, fallback = GENERIC_ERROR): string {
+  let text = "";
+  if (typeof error === "string") text = error;
+  else if (error && typeof error === "object") {
+    const value = error as Record<string, any>;
+    text = String(value.error?.message || value.message || value.reason || "");
+  }
+  const nested = text.match(/["']message["']\s*:\s*(["'])((?:\\.|(?!\1).)*)\1/);
+  if (nested) text = nested[2].replace(/\\(["'])/g, "$1");
+  text = text.replace(/^\s*(?:invoke error|tool error|error)\s*:\s*/i, "").trim();
+  const lower = text.toLowerCase();
+  if (!text || text === "[object Object]") return fallback;
+  if (lower.includes("precondition")) return "This campaign changed in another window. Reload and try again.";
+  if (lower.includes("timed out") || lower.includes("timeout")) return "The Dungeon Master took too long to answer. Please try again.";
+  if (lower.includes("failed to fetch") || lower.includes("networkerror") || lower.includes("network error")) return "The connection was interrupted. Check your network and try again.";
+  if (lower.includes("json") || lower.includes("model response") || lower.includes("unexpected token")) return "The Dungeon Master's reply could not be read. Please try again.";
+  if (lower.includes("notallowederror") || lower.includes("permission denied")) return "Microphone access was blocked. Allow it in your browser to use voice.";
+  if (lower.includes("rate limit") || lower.includes("quota") || lower.includes("429")) return "The service is busy right now. Please wait a moment and try again.";
+  // Anything that still looks like a payload, stack or code is not for players.
+  if (/[{}\[\]]|-32\d{3}|traceback|exception|\bat \S+:\d+/i.test(text) || text.length > 280) return fallback;
+  return text;
+}
+
+async function guarded<T>(work: () => Promise<T>, fallback?: string): Promise<T> {
+  try { return await work(); }
+  catch (error) {
+    console.error(error);
+    throw new Error(friendlyError(error, fallback));
+  }
 }
 
 function unwrap<T>(value: unknown): T {
@@ -169,20 +208,29 @@ function previewInvoke(method: string, args: Record<string, any>): any {
     }
     return updated;
   }
+  if (method === "voice_status") return { configured: false };
   if (method === "voice_token") throw new Error("Voice needs a configured Gemini API key and Anna external API approval.");
   throw new Error("The local preview could not complete that request.");
 }
 
 export async function invokeTool<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
   const { anna, preview } = await getRuntime();
-  if (preview) return previewInvoke(method, args) as T;
-  const toolId = window.__ANNA_TOOL_IDS__?.[TOOL_HANDLE] || DEV_TOOL_ID;
-  return unwrap<T>(await anna.tools.invoke({ tool_id: toolId, method, args }));
+  return guarded(async () => {
+    if (preview) return previewInvoke(method, args) as T;
+    const toolId = window.__ANNA_TOOL_IDS__?.[TOOL_HANDLE] || DEV_TOOL_ID;
+    const result = unwrap<T>(await anna.tools.invoke({ tool_id: toolId, method, args }));
+    if (result === null || result === undefined) throw new Error("");
+    return result;
+  });
 }
 
 async function getStored<T>(key: string): Promise<Stored<T>> {
   const { anna } = await getRuntime();
-  return anna.storage.get({ scope: "user", key }) as Promise<Stored<T>>;
+  const stored = await guarded(
+    () => anna.storage.get({ scope: "user", key }) as Promise<Stored<T>>,
+    "Your saved campaigns could not be loaded. Please try again.",
+  );
+  return stored && typeof stored === "object" ? stored : { exists: false };
 }
 
 async function setStored<T>(key: string, value: T, previous?: Stored): Promise<void> {
@@ -192,7 +240,7 @@ async function setStored<T>(key: string, value: T, previous?: Stored): Promise<v
     if (!previous.etag) throw new Error("Anna returned no ETag. Reload the campaign before saving.");
     params.if_match = previous.etag;
   }
-  await anna.storage.set(params);
+  await guarded(() => anna.storage.set(params), "Your progress could not be saved. Please try again.");
 }
 
 async function saveIndexEntry(campaign: CampaignRecord): Promise<void> {
@@ -202,7 +250,7 @@ async function saveIndexEntry(campaign: CampaignRecord): Promise<void> {
     const campaigns = index.campaigns.filter((item) => item.id !== campaign.id);
     campaigns.unshift({ id: campaign.id, name: campaign.name, updated_at: campaign.updated_at, game_id: campaign.game_id });
     try { await setStored(INDEX_KEY, { campaigns: campaigns.slice(0, 40) }, previous); return; }
-    catch (error) { if (attempt || !String((error as Error)?.message || error).includes("precondition")) throw error; }
+    catch (error) { if (attempt || !/precondition|another window/.test(String((error as Error)?.message || error))) throw error; }
   }
 }
 
@@ -304,7 +352,9 @@ const classSpecs: Array<[string, string, string, string, string, string, string,
 export async function getClasses(): Promise<ClassProfile[]> {
   // The Executa wraps the list in an object: the Anna host drops bare-list results.
   const result = await invokeTool<{ classes: ClassProfile[] } | ClassProfile[]>("get_class_profiles");
-  return Array.isArray(result) ? result : result.classes;
+  const classes = Array.isArray(result) ? result : result?.classes;
+  if (!Array.isArray(classes) || !classes.length) throw new Error("Please try again.");
+  return classes;
 }
 
 export async function getCampaigns(): Promise<CampaignSummary[]> {
@@ -343,11 +393,11 @@ export async function deleteCampaign(campaignId: string): Promise<void> {
   if (record.exists) {
     if (!record.etag) throw new Error("Anna returned no ETag. Reload the campaign before deleting it.");
     const { anna } = await getRuntime();
-    await anna.storage.delete({
+    await guarded(() => anna.storage.delete({
       scope: "user",
       key: campaignKey(campaignId),
       if_match: record.etag,
-    });
+    }), "The campaign could not be deleted. Please try again.");
   }
   for (let attempt = 0; attempt < 2; attempt++) {
     const previous = await getStored<{ campaigns: Array<{ id: string }> }>(INDEX_KEY);
@@ -355,8 +405,17 @@ export async function deleteCampaign(campaignId: string): Promise<void> {
     try {
       await setStored(INDEX_KEY, { campaigns: previous.value.campaigns.filter((item) => item.id !== campaignId) }, previous);
       return;
-    } catch (error) { if (attempt || !String((error as Error)?.message || error).includes("precondition")) throw error; }
+    } catch (error) { if (attempt || !/precondition|another window/.test(String((error as Error)?.message || error))) throw error; }
   }
+}
+
+let voiceStatus: Promise<boolean> | null = null;
+/** Whether optional voice is configured. Any failure simply means "no voice". */
+export function getVoiceAvailable(): Promise<boolean> {
+  voiceStatus ??= invokeTool<{ configured?: boolean }>("voice_status")
+    .then((result) => result?.configured === true)
+    .catch(() => false);
+  return voiceStatus;
 }
 
 export async function getLiveToken(opts?: { type?: "text" | "audio"; emotion?: string; voiceName?: string }): Promise<{ token: string; model: string; websocket_url: string }> {

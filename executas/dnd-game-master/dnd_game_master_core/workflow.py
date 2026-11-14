@@ -23,6 +23,7 @@ from .safety import evaluate_input_safety
 
 Sample = Callable[..., str]
 MAX_ITERATIONS = 3
+PARSE_ATTEMPTS = 3
 MAX_EVENTS = 500
 MAX_STATE_CHARS = 8000
 MAX_STORY_CHARS = 7200
@@ -66,15 +67,16 @@ def _parse_json(raw: Any) -> dict[str, Any]:
                 value = json.loads(value.strip())
             except json.JSONDecodeError:
                 break
-        elif isinstance(value, list) and len(value) == 1:
-            value = value[0]
+        elif isinstance(value, list):
+            # Take the first object from an array-wrapped reply.
+            first = next((item for item in value if isinstance(item, (dict, str))), None)
+            if first is None:
+                break
+            value = first
         else:
             break
     if not isinstance(value, dict):
-        snippet = candidate[:160].replace("\n", " ")
-        raise ValueError(
-            f"The model response must be a JSON object (got {type(value).__name__}: {snippet!r})."
-        )
+        raise ValueError("The model did not return a JSON object.")
     return value
 
 
@@ -86,14 +88,29 @@ def _call_sample(
     user_prompt: str,
     max_tokens: int = 1800,
 ) -> dict[str, Any]:
-    raw = sample(
-        invoke_id=invoke_id,
-        tool_name=tool_name,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        max_tokens=max_tokens,
-    )
-    return _parse_json(raw)
+    # A malformed reply is retried with an explicit correction instead of failing the turn.
+    prompt = user_prompt
+    last_error: ValueError | None = None
+    for _ in range(PARSE_ATTEMPTS):
+        raw = sample(
+            invoke_id=invoke_id,
+            tool_name=tool_name,
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            max_tokens=max_tokens,
+        )
+        try:
+            return _parse_json(raw)
+        except ValueError as exc:
+            last_error = exc
+            prompt = (
+                user_prompt
+                + "\n\nYour previous reply could not be parsed. Reply with exactly one "
+                "JSON object: no prose, no markdown fences, no surrounding array."
+            )
+    raise ValueError(
+        "The Dungeon Master's reply could not be read. Please try again."
+    ) from last_error
 
 
 def _trim(value: Any, limit: int = MAX_STATE_CHARS) -> str:
@@ -222,18 +239,22 @@ def _run_story_agent(
         ),
     ]
     context_text = _trim(context, MAX_STORY_CHARS)
-    result = _call_sample(
-        sample,
-        invoke_id,
-        "story_agent",
-        _STORY_SYSTEM,
-        (
-            "Lore question: " + json.dumps(query, ensure_ascii=False) +
-            "\n\nRetrieved source files and provenance:\n" + context_text +
-            "\n\nSynthesize only these source facts. Return empty content when none match."
-        ),
-        max_tokens=1300,
-    )
+    try:
+        result = _call_sample(
+            sample,
+            invoke_id,
+            "story_agent",
+            _STORY_SYSTEM,
+            (
+                "Lore question: " + json.dumps(query, ensure_ascii=False) +
+                "\n\nRetrieved source files and provenance:\n" + context_text +
+                "\n\nSynthesize only these source facts. Return empty content when none match."
+            ),
+            max_tokens=1300,
+        )
+    except ValueError:
+        # The synthesis is optional: fall back to the raw retrieved excerpts.
+        result = {"content": context_text if context["found"] else ""}
     return {
         "found": bool(result.get("found", context["found"])),
         "chapter": _text(result.get("chapter"), context["chapter"], 120),
@@ -543,7 +564,7 @@ def create_campaign(
 
     if setup is None:
         raise ValueError(
-            "The setup agent could not prepare a valid campaign opening. " + feedback
+            "The Dungeon Master could not prepare the opening scene. Please try again."
         )
     if setup["ready"] is not True:
         message = _text(setup.get("message"), "Add a campaign name and complete party details before starting.", 700)
@@ -695,7 +716,12 @@ def draft_turn(campaign: Any, action: str, invoke_id: str, dice: Any, sample: Sa
             f"Prior evaluator feedback to fix:\n{feedback or 'None'}\n\n"
             f"{task}"
         )
-        raw_draft = _call_sample(sample, invoke_id, agent_name, system, user, max_tokens=2600)
+        try:
+            raw_draft = _call_sample(sample, invoke_id, agent_name, system, user, max_tokens=2600)
+        except ValueError:
+            feedback = "The previous reply was not a single valid JSON object."
+            trace.append(_trace(evaluator_name, "evaluator", "JSON/schema validation: failed — unreadable reply.", iteration))
+            continue
         schema_error = _schema_feedback(raw_draft, intent)
         trace.append(_trace(evaluator_name, "evaluator", f"JSON/schema validation: {'failed — ' + schema_error if schema_error else 'passed'}.", iteration))
         if schema_error:
@@ -732,10 +758,9 @@ def draft_turn(campaign: Any, action: str, invoke_id: str, dice: Any, sample: Sa
         feedback = _text(evaluation.get("comment"), "Address the player's request more clearly.", 1000)
 
     if normalized is None:
-        reason = _text(feedback, "no reason recorded", 300)
         raise ValueError(
-            "The specialist could not produce a validated response after three attempts. "
-            f"Last check: {reason} Please rephrase the action and try again."
+            "The Dungeon Master could not settle on a response for that action. "
+            "Please try again, or rephrase what the party does."
         )
 
     last_agents = ["input_guardrail", "intent_classifier", "story_agent", agent_name, evaluator_name]

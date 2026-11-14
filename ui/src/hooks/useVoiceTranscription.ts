@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GoogleGenAI, type LiveServerMessage, type Session } from "@google/genai";
-import { getLiveToken } from "@/lib/api";
+import { friendlyError, getLiveToken } from "@/lib/api";
 
 // Gemini Live expects 16 kHz mono little-endian PCM.
 const SAMPLE_RATE = 16000;
@@ -161,7 +161,7 @@ export function useVoiceTranscription({
             if (t) onTranscriptRef.current(t);
           },
           onerror: (e) => {
-            setError(e?.message ?? "Voice connection error");
+            setError(friendlyError(e, "The voice connection failed. Please try again."));
             stop();
           },
           onclose: (e) => {
@@ -169,9 +169,8 @@ export function useVoiceTranscription({
             // real failure (bad model, expired/invalid token, quota) that would
             // otherwise be invisible.
             if (e && e.code !== 1000) {
-              setError(
-                `Voice connection closed (${e.code}): ${e.reason || "unknown reason"}`,
-              );
+              console.error("Voice connection closed", e.code, e.reason);
+              setError("The voice connection closed unexpectedly. Please try again.");
             }
             setListening(false);
           },
@@ -224,7 +223,7 @@ export function useVoiceTranscription({
       setConnecting(false);
       setListening(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start voice input");
+      setError(friendlyError(err, "Voice input could not be started. Please try again."));
       stop();
     }
   }, [connecting, stop]);

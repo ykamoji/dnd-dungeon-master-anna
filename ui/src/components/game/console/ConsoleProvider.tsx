@@ -13,7 +13,7 @@ import {
 } from "react";
 import { useGame } from "@/context/GameContext";
 import { GAME_CATALOG } from "@/lib/games";
-import { createCampaign, getCampaignRecord, invokeTool, saveCampaignRecord, traceToEvents, type CampaignRecord } from "@/lib/api";
+import { createCampaign, friendlyError, getCampaignRecord, invokeTool, saveCampaignRecord, traceToEvents, type CampaignRecord } from "@/lib/api";
 import type { SessionEvent, TurnSnapshot } from "@/lib/types";
 
 export type RunStatus = "idle" | "running" | "awaiting_approval" | "rejecting" | "error";
@@ -44,6 +44,8 @@ type Action =
   | { type: "REJECTING" }
   | { type: "REJECTED" }
   | { type: "RUN_ERROR"; message: string }
+  | { type: "DISMISS_ERROR" }
+  | { type: "SHOW_ERROR"; message: string }
   | { type: "SET_READER_TAB"; tab: "scene" | "timeline" };
 function reducer(state: ConsoleState, action: Action): ConsoleState {
   switch (action.type) {
@@ -56,6 +58,8 @@ function reducer(state: ConsoleState, action: Action): ConsoleState {
     case "REJECTING": return { ...state, runStatus: "rejecting", pendingDraft: null };
     case "REJECTED": return { ...state, runStatus: "idle", viewPending: false, events: [], pendingDraft: null, error: null };
     case "RUN_ERROR": return { ...state, runStatus: "error", viewPending: false, error: action.message };
+    case "SHOW_ERROR": return { ...state, error: action.message };
+    case "DISMISS_ERROR": return { ...state, runStatus: state.runStatus === "error" ? "idle" : state.runStatus, error: null };
     case "SET_READER_TAB": return { ...state, readerTab: action.tab };
     default: return state;
   }
@@ -82,6 +86,9 @@ interface ConsoleContextValue {
   approve: () => void;
   reject: () => void;
   reconnectStream: () => void;
+  dismissError: () => void;
+  /** Set when the opening scene failed, so the player can run setup again. */
+  retrySetup: (() => void) | null;
   selectTurn: (index: number) => void;
   selectPending: () => void;
   setComposerDraft: (text: string) => void;
@@ -93,6 +100,7 @@ const ConsoleContext = createContext<ConsoleContextValue | null>(null);
 interface ConsoleProviderProps {
   history: TurnSnapshot[];
   historyLoading: boolean;
+  historyError?: string | null;
   progress: number | null;
   summary: string | null;
   reloadHistory: () => void;
@@ -134,12 +142,17 @@ function pendingEvents(action: string, draft: Record<string, any>, invocationId:
   ];
 }
 
-export function ConsoleProvider({ history, historyLoading, progress, summary, reloadHistory, campaignId, children }: ConsoleProviderProps) {
+export function ConsoleProvider({ history, historyLoading, historyError, progress, summary, reloadHistory, campaignId, children }: ConsoleProviderProps) {
   const { state: game, dispatch: gameDispatch } = useGame();
   const [state, dispatch] = useReducer(reducer, initialState);
   const [pendingObject, setPendingObject] = useState<Record<string, any> | null>(null);
   const busyRef = useRef(false);
   const autoStartedForRef = useRef<string | null>(null);
+  const [setupFailed, setSetupFailed] = useState(false);
+
+  useEffect(() => {
+    if (historyError) dispatch({ type: "RUN_ERROR", message: historyError });
+  }, [historyError]);
 
   useEffect(() => {
     if (history.length && state.runStatus === "idle") dispatch({ type: "SELECT_TURN", index: history.length - 1 });
@@ -150,10 +163,9 @@ export function ConsoleProvider({ history, historyLoading, progress, summary, re
     return entry?.title ?? game.selectedGameId ?? campaignId ?? "the adventure";
   }, [game.selectedGameId, campaignId]);
 
-  useEffect(() => {
-    if (!game.autoStart || !campaignId || autoStartedForRef.current === campaignId || busyRef.current) return;
-    autoStartedForRef.current = campaignId;
-    gameDispatch({ type: "CONSUME_AUTOSTART" });
+  const runSetup = useCallback(() => {
+    if (!campaignId || busyRef.current) return;
+    setSetupFailed(false);
     const entry = GAME_CATALOG.find((item) => item.id === game.selectedGameId);
     if (!entry) {
       dispatch({ type: "RUN_ERROR", message: "Choose an adventure before beginning." });
@@ -184,9 +196,17 @@ export function ConsoleProvider({ history, historyLoading, progress, summary, re
       reloadHistory();
       dispatch({ type: "RUN_DONE" });
     }).catch((error: unknown) => {
-      dispatch({ type: "RUN_ERROR", message: error instanceof Error ? error.message : "The campaign could not be created." });
+      setSetupFailed(true);
+      dispatch({ type: "RUN_ERROR", message: friendlyError(error, "The campaign could not be created. Please try again.") });
     }).finally(() => { busyRef.current = false; });
-  }, [game.autoStart, game.selectedGameId, game.party, campaignId, gameDispatch, reloadHistory]);
+  }, [game.selectedGameId, game.party, campaignId, reloadHistory]);
+
+  useEffect(() => {
+    if (!game.autoStart || !campaignId || autoStartedForRef.current === campaignId || busyRef.current) return;
+    autoStartedForRef.current = campaignId;
+    gameDispatch({ type: "CONSUME_AUTOSTART" });
+    runSetup();
+  }, [game.autoStart, campaignId, gameDispatch, runSetup]);
 
   const restorePending = useCallback(async () => {
     if (!campaignId) return;
@@ -202,7 +222,7 @@ export function ConsoleProvider({ history, historyLoading, progress, summary, re
     if (!campaignId || game.autoStart) return;
     let cancelled = false;
     void restorePending().catch((error: unknown) => {
-      if (!cancelled) dispatch({ type: "RUN_ERROR", message: error instanceof Error ? error.message : "Could not restore the pending turn." });
+      if (!cancelled) dispatch({ type: "RUN_ERROR", message: friendlyError(error, "The pending turn could not be restored. Please reload.") });
     });
     return () => { cancelled = true; };
   }, [campaignId, game.autoStart, restorePending]);
@@ -230,7 +250,9 @@ export function ConsoleProvider({ history, historyLoading, progress, summary, re
       setPendingObject(draft);
       dispatch({ type: "AWAIT_APPROVAL", draft: toDraftSnapshot(draft), events: pendingEvents(action, draft, `anna-${draft.id}`) });
     } catch (error) {
-      dispatch({ type: "RUN_ERROR", message: error instanceof Error ? error.message : "The Dungeon Master could not draft this turn." });
+      dispatch({ type: "RUN_ERROR", message: friendlyError(error, "The Dungeon Master could not draft this turn. Please try again.") });
+      // Hand the action back so the player can resend it without retyping.
+      dispatch({ type: "SET_COMPOSER", text: action });
     } finally { busyRef.current = false; }
   }, [campaignId, state.runStatus]);
 
@@ -248,14 +270,18 @@ export function ConsoleProvider({ history, historyLoading, progress, summary, re
       reloadHistory();
       dispatch({ type: approved ? "RUN_DONE" : "REJECTED" });
     } catch (error) {
-      dispatch({ type: "RUN_ERROR", message: error instanceof Error ? error.message : "The draft could not be resolved." });
+      const message = friendlyError(error, "The draft could not be resolved. Please try again.");
+      dispatch({ type: "RUN_ERROR", message });
+      // Put the draft back on screen so Approve / Reject can be pressed again.
+      try { await restorePending(); dispatch({ type: "SHOW_ERROR", message }); } catch { /* error already shown */ }
     } finally { busyRef.current = false; }
-  }, [campaignId, pendingObject, reloadHistory, state.runStatus]);
+  }, [campaignId, pendingObject, reloadHistory, restorePending, state.runStatus]);
 
   const selectTurn = useCallback((index: number) => dispatch({ type: "SELECT_TURN", index }), []);
   const selectPending = useCallback(() => dispatch({ type: "SELECT_PENDING" }), []);
   const setComposerDraft = useCallback((text: string) => dispatch({ type: "SET_COMPOSER", text }), []);
   const setReaderTab = useCallback((tab: "scene" | "timeline") => dispatch({ type: "SET_READER_TAB", tab }), []);
+  const dismissError = useCallback(() => dispatch({ type: "DISMISS_ERROR" }), []);
   const reconnectStream = useCallback(() => { void restorePending(); }, [restorePending]);
   const approve = useCallback(() => { void resolve(true); }, [resolve]);
   const reject = useCallback(() => { void resolve(false); }, [resolve]);
@@ -269,7 +295,8 @@ export function ConsoleProvider({ history, historyLoading, progress, summary, re
     activeIndex: state.activeIndex, activeSnapshot, pending, viewPending: state.viewPending,
     runStatus: state.runStatus, events: state.events, pendingDraft: state.pendingDraft,
     composerDraft: state.composerDraft, error: state.error, streamDelaying: state.streamDelaying,
-    submitTurn, approve, reject, reconnectStream, selectTurn, selectPending, setComposerDraft,
+    submitTurn, approve, reject, reconnectStream, dismissError,
+    retrySetup: setupFailed && !history.length ? runSetup : null, selectTurn, selectPending, setComposerDraft,
     readerTab: state.readerTab, setReaderTab,
   };
   return <ConsoleContext.Provider value={value}>{children}</ConsoleContext.Provider>;

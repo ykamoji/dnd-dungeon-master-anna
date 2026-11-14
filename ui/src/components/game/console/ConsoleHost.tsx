@@ -22,7 +22,7 @@ export function ConsoleHost() {
   // was submitted under (see BEGIN_NEW_CAMPAIGN / SELECT_CAMPAIGN).
   const campaignId = game.campaignId;
 
-  const { history, progress, summary, loading, reload } = useCampaignHistory(campaignId);
+  const { history, progress, summary, loading, error: historyError, reload } = useCampaignHistory(campaignId);
 
   // Layout choice, persisted. Start from the default so SSR and first client
   // render match; hydrate the stored choice in an effect.
@@ -47,6 +47,7 @@ export function ConsoleHost() {
         campaignId={campaignId}
         history={history}
         historyLoading={loading}
+        historyError={historyError}
         progress={progress}
         summary={summary}
         reloadHistory={reload}

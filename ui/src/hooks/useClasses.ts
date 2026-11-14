@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getClasses } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { friendlyError, getClasses } from "@/lib/api";
 import type { ClassProfile } from "@/lib/types";
 
 interface UseClassesResult {
   classes: ClassProfile[];
   loading: boolean;
   error: string | null;
+  reload: () => void;
 }
 
 /** Fetches class DNA profiles from GET /tools/classes. */
@@ -16,9 +17,10 @@ export function useClasses(): UseClassesResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let active = true;
     setLoading(true);
+    setError(null);
     getClasses()
       .then((data) => {
         if (active) {
@@ -27,7 +29,7 @@ export function useClasses(): UseClassesResult {
         }
       })
       .catch((e: unknown) => {
-        if (active) setError(e instanceof Error ? e.message : "Failed to load classes");
+        if (active) setError(friendlyError(e, "Please try again."));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -37,5 +39,7 @@ export function useClasses(): UseClassesResult {
     };
   }, []);
 
-  return { classes, loading, error };
+  useEffect(() => load(), [load]);
+
+  return { classes, loading, error, reload: load };
 }
