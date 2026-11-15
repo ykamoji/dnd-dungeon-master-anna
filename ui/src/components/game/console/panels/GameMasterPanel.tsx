@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
+import { useGame } from "@/context/GameContext";
 import { useConsole, type DiceRolls } from "../ConsoleProvider";
 import { DiceTray } from "../parts/DiceTray";
 import { CommandComposer } from "../parts/CommandComposer";
@@ -28,6 +30,7 @@ export function GameMasterPanel({ orientation = "hero" }: GameMasterPanelProps) 
   } = useConsole();
 
   const [rolls, setRolls] = useState<DiceRolls>(NO_ROLLS);
+  const { currentStep } = useGame();
 
   const busy =
     runStatus === "running" ||
@@ -43,7 +46,10 @@ export function GameMasterPanel({ orientation = "hero" }: GameMasterPanelProps) 
 
   return (
     <div>
-      {error && (
+      {/* Portal to <body>: the stage slides its views with a CSS transform, which would
+          otherwise pin this "fixed" banner to the top of the stack (the first page). Only
+          show it while the console is the current step. */}
+      {error && currentStep === "console" && typeof document !== "undefined" && createPortal(
         <div
           role="alert"
           className="fixed left-1/2 top-16 z-50 flex max-w-[min(90vw,40rem)] -translate-x-1/2 items-center gap-3 rounded-card border border-blood-bright/50 bg-blood px-4 py-2 text-md text-gold shadow-lg"
@@ -66,7 +72,8 @@ export function GameMasterPanel({ orientation = "hero" }: GameMasterPanelProps) 
           >
             ✕
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <div className={`flex ${orientation === "vertical" ? "flex-col" : "flex-row"} items-center gap-3 space-y-3`}>
