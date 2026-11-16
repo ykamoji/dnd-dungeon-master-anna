@@ -37,7 +37,7 @@ export function CommandComposer({
     onTranscript: handleTranscript,
   });
 
-  // Voice is optional: the mic stays hidden until a key is configured.
+  // The mic stays hidden when the host offers no speech models.
   const voiceAvailable = useVoiceAvailable();
 
   const toggleVoice = () => {

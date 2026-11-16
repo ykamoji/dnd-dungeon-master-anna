@@ -15,46 +15,16 @@ function hpTone(ratio: number): string {
   return "bg-gold";
 }
 
-/** Class portrait path (public/characters/<Class>.png), title-cased. */
+/** Class portrait path (public/characters/<Class>.webp), title-cased. */
 function portraitFor(cls: string): string {
   const name = cls ? cls.charAt(0).toUpperCase() + cls.slice(1).toLowerCase() : "";
-  return "characters/" + name + ".png";
+  return "characters/" + name + ".webp";
 }
 
 /* --- icon slot ----------------------------------------------------------- */
-/** Placeholder icon — swap in your own icon (e.g. <img src="/icons/…" />). */
+/** Decorative stat icon: public/party/<kebab-label>.webp. */
 function IconSlot({ name }: { name: string }) {
-  return <img src={`party/${name}.png`} className="h-full w-full" />;
-}
-
-/* --- stat value renderers ------------------------------------------------ */
-
-/** Dummy XP progress bar (reference: "1,250 / 2,000 XP"). */
-function XpBar({ current = 1250, max = 2000 }: { current?: number; max?: number }) {
-  const pct = max > 0 ? Math.max(0, Math.min(1, current / max)) * 100 : 0;
-  return (
-    <div className="w-44">
-      <div className="h-1.5 overflow-hidden rounded-full bg-stone">
-        <div className="h-full bg-gold" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="mt-1 block font-rune text-[11px] tracking-wide text-parchment-dim">
-        {current.toLocaleString()} / {max.toLocaleString()} XP
-      </span>
-    </div>
-  );
-}
-
-/** Inspiration diamonds (reference: ◆ ◇). Dummy filled count. */
-function Diamonds({ filled = 2, total = 3 }: { filled?: number; total?: number }) {
-  return (
-    <div className="flex items-center gap-1.5 text-lg leading-none">
-      {Array.from({ length: total }).map((_, i) => (
-        <span key={i} className={i < filled ? "text-gold" : "text-gold/30"}>
-          {i < filled ? "◆" : "◇"}
-        </span>
-      ))}
-    </div>
-  );
+  return <img src={`party/${name.replace(/\s+/g, "-")}.webp`} alt="" className="h-full w-full" />;
 }
 
 /** Red HP bar (reference: "28 / 28 HP"). */
@@ -105,7 +75,7 @@ function CharacterCard({ name, c }: { name: string; c: CharacterState }) {
   const initial = (c.class || name).charAt(0).toUpperCase();
 
   return (
-    <div className="group relative flex aspect-[3/4] h-[520px] flex-col overflow-hidden rounded-card border border-stone-2 bg-obsidian-2/70 transition-colors hover:border-gold/40">
+    <div className="group relative flex aspect-[3/4] h-[min(520px,65vh)] flex-col overflow-hidden rounded-card border border-stone-2 bg-obsidian-2/70 transition-colors hover:border-gold/40">
       {/* Full-bleed portrait — class image over a gradient fallback (shows if 404) */}
       <div className="absolute inset-0">
         <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-stone-2 to-obsidian">
@@ -181,19 +151,22 @@ function CharacterCard({ name, c }: { name: string; c: CharacterState }) {
 /** The party's mechanical state — HP, conditions, and gear — at a turn. */
 export function PartyStatGrid({ party, partyBreakdown }: PartyStatGridProps) {
   const entries = Object.entries(party?.characters ?? {});
+  const members = entries.map(([, c]) => c);
+  // Older saves have no max_health; fall back to the members' max HP.
+  const maxHealth = partyBreakdown?.max_health
+    ?? (members.length ? members.reduce((sum, c) => sum + (c.max_hp || c.hp || 0), 0) : partyBreakdown?.health ?? 0);
+  const averageLevel = partyBreakdown && members.length
+    ? Math.max(1, Math.round(partyBreakdown.level / members.length))
+    : partyBreakdown?.level ?? 1;
 
   return (
     <div className="space-y-4">
       {partyBreakdown && (
         <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4 rounded-card p-4">
-          <StatBlock label="Party Level">
-            <XpBar current={1250} max={2000} />
-          </StatBlock>
-          <StatBlock label="Perception">
-            <Diamonds filled={2} total={3} />
-          </StatBlock>
+          <StatBlock label="Party Level">Level {averageLevel}</StatBlock>
+          <StatBlock label="Perception">{partyBreakdown.perception ?? 10}</StatBlock>
           <StatBlock label="Party Health">
-            <HpBar current={partyBreakdown.health} max={partyBreakdown.health} />
+            <HpBar current={partyBreakdown.health} max={Math.max(maxHealth, partyBreakdown.health)} />
           </StatBlock>
           <StatBlock label="Gold">{partyBreakdown.money ?? 0} gp</StatBlock>
         </div>
@@ -202,20 +175,13 @@ export function PartyStatGrid({ party, partyBreakdown }: PartyStatGridProps) {
       {entries.length === 0 ? (
         <p className="font-rune text-md text-parchment-dim/70">No party state recorded yet.</p>
       ) : (
-        <div className="flex flex-row gap-2">
+        <div className="flex flex-row flex-wrap justify-center gap-2">
           {entries.map(([name, c]) => (
             <CharacterCard key={name} name={name} c={c} />
           ))}
         </div>
       )}
 
-      {/* Party summary — dummy values; icons to be provided later */}
-      <div className="flex flex-wrap items-center justify-around gap-x-8 gap-y-4 p-4">
-        <StatBlock label="Initiative Bonus">+2</StatBlock>
-        <StatBlock label="Passive Perception">14</StatBlock>
-        <StatBlock label="Armor Class">15</StatBlock>
-        <StatBlock label="Movement Speed">30 ft.</StatBlock>
-      </div>
     </div>
   );
 }

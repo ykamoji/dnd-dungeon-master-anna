@@ -114,15 +114,20 @@ export function GameStage() {
   }, [stepIndex, dispatch]);
   const goDown = useCallback(() => dispatch({ type: "NEXT" }), [dispatch]);
 
-  // Arrow keys mirror the nav buttons.
+  // Arrow keys mirror the nav buttons, except on the console (arrows belong to the
+  // composer and panels there) and inside any field, list or editable element.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (currentStep === "console") return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable=''], [contenteditable='true'], [role='listbox'], [role='combobox'], [role='slider']")) return;
       if (e.key === "ArrowUp" && canGoUp) goUp();
       if (e.key === "ArrowDown" && canGoDown) goDown();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canGoUp, canGoDown, goUp, goDown]);
+  }, [canGoUp, canGoDown, goUp, goDown, currentStep]);
 
   return (
     <div className="relative h-screen w-full overflow-hidden">

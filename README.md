@@ -10,8 +10,8 @@ The Anna SPA keeps the existing D&D client’s dark, cinematic interface: the la
 - Run the original backend stages through Anna sampling: input guardrail, intent classifier, story librarian, ACTION/NPC_DIALOGUE/CAMPAIGN specialists, schema/semantic evaluation with retries, and a player approval gate.
 - Ground setup and turns in the bundled Tomb of Annihilation file corpus, Open5e character/rules lookups, scene art index, and persistent party/campaign state.
 - Let the player approve a draft to commit its action, narration, checks, and story changes, or reject it without applying the proposed state changes.
-- Save campaigns in Anna user-scoped storage and resume them after reconnecting.
-- Offer optional Gemini Live microphone input and spoken acknowledgements. This feature requires an Executa `GEMINI_API_KEY` credential and Anna approval of the external API integration.
+- Save campaigns in the app's own Anna storage (one small value per turn) and resume them after reconnecting. Saves from 0.2.x are migrated from the shared user scope on first open.
+- Offer microphone input and spoken NPC lines through Anna's built-in speech (`anna.audio.transcribe` / `anna.audio.speak`). No API key or external service is involved.
 
 The React screens, styling, artwork, and class portraits are copied from the existing client; the MIT project license is included here. Local fonts carry their SIL Open Font License notices under `ui/public/fonts/`.
 
@@ -31,7 +31,6 @@ The campaign selector preserves the source client’s three entries: Princes of 
 - Node.js and npm for the React UI; Python 3.11 or newer and `uv` for local Executa development.
 - Anna’s `@anna-ai/cli` package for validation, host preview, and Marketplace submission (install with `npm install -g @anna-ai/cli`).
 - PyInstaller for binary packaging (`python -m pip install -r requirements-build.txt`).
-- A Gemini API key stored as the Executa's sensitive `GEMINI_API_KEY` credential to enable optional voice. Do not place credentials in this repository, source files, build logs, or client-side storage.
 
 ## Local development
 
@@ -64,20 +63,18 @@ The Executa protocol supports Anna v2 reverse `sampling/createMessage` calls and
 
 ## Environment variables and API keys
 
-Anna does not automatically load the original backend's `.env` or Cloud Run env file. For hosted Executas, declared values are supplied in `params.context.credentials`. The tool manifest declares only the two optional credentials the Executa actually reads, so nothing blocks installation.
+None. The Executa declares no credentials and reads no environment variables: text generation goes through Anna sampling and voice through Anna's audio API.
 
-Only `GEMINI_API_KEY` and `GOOGLE_API_KEY` are read by the Anna Executa, and only by `voice_token`. `GEMINI_API_KEY` takes precedence; `GOOGLE_API_KEY` is retained as the original Cloud Run key name and a voice fallback. Neither key is used for text generation: the Anna runtime uses `llm.sample`. Store these keys only as sensitive Anna credentials, never in the repository, UI bundle, or binary.
+The other original Cloud Run variables (`GOOGLE_MODEL`, `SMART_MODEL`, `USE_LOCAL_LLM`, `SESSION_DB_LOCAL`, the MongoDB settings, `LOG_LEVEL`, `ALLOW_ORIGINS`) are not declared: model calls go through Anna `llm.sample`, campaigns use the app's own Anna storage, and the static app has no CORS or server logging to configure.
 
-The other original Cloud Run variables (`GOOGLE_MODEL`, `SMART_MODEL`, `USE_LOCAL_LLM`, `SESSION_DB_LOCAL`, the MongoDB settings, `LOG_LEVEL`, `ALLOW_ORIGINS`) are not declared: model calls go through Anna `llm.sample`, campaigns use Anna user-scoped storage, and the static app has no CORS or server logging to configure.
-
-`SESSION_SERVICE_URI` is intentionally not declared: the source Cloud Run example says to leave it unset so the original backend uses its local SQLite session store. For local voice development, the ignored `.env` or shell can provide either key; the committed `.env.example` contains only placeholders. The packaged Executa does not include `.env` files.
+`SESSION_SERVICE_URI` is intentionally not declared: the source Cloud Run example says to leave it unset so the original backend uses its local SQLite session store.
 
 ## Pre-submission checklist
 
 1. Run `npm run build --prefix ui`, then `anna-app validate --strict`; fix all manifest, CSP, host API, and bundled Executa errors before `anna-app dev`.
 2. In Anna, create a campaign, play a turn, approve it, play another turn and reject it, reload, and resume the saved campaign. Check storage errors and malformed model responses.
 3. Build and register the Linux x86_64 binary, then run the bundled Executa with an Anna Cloud Agent. Confirm sampling negotiation, tool invocation, error behavior, and credential handling.
-4. Configure the optional Gemini credential only in Anna. Request external API review for `generativelanguage.googleapis.com` before enabling voice; Anna’s manifest accepts HTTPS external origins, while Gemini Live uses a secure WebSocket to the same host.
+4. Try voice input and an NPC voice line; both use Anna's audio API and need no extra setup.
 5. Complete the Marketplace listing, confirm all third-party and adventure content rights, and submit the app for review.
 
 The review process can take up to five business days per submission or resubmission. The founding-builder qualification window currently ends November 30, 2026; the app must be approved and published and reach the announced qualified monthly active user threshold during the window. See the forum announcement for current program terms.

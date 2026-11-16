@@ -58,39 +58,44 @@ export function PendingView({
   events,
   awaiting,
   draft,
+  notice = null,
   onSync,
 }: {
   events: SessionEvent[];
   awaiting: boolean;
   draft: string | null;
+  /** A DM reply with nothing to approve (a declined request); the run is over. */
+  notice?: string | null;
   onSync: () => void;
 }) {
   const { setComposerDraft, approve, reject } = useConsole();
   const parsedDraft = draft ? parseDraftToSnapshot(draft) : null;
   const [tab, setTab] = useState<"draft" | "timeline">("timeline");
 
+  const working = !awaiting && !notice;
+
   useEffect(() => {
-    if (awaiting && tab != 'draft') {
+    if ((awaiting || notice) && tab != 'draft') {
       setTab("draft");
     }
-  }, [awaiting]);
+  }, [awaiting, notice]);
 
   return (
     <div className="flex h-full flex-col gap-2">
       <header className="flex shrink-0 items-start justify-between">
         <div>
           <p className="font-display text-[10px] uppercase tracking-[0.3em] text-gold">
-            {awaiting ? "" : "The Dungeon Master is at work"}
+            {notice ? "The Dungeon Master replies" : awaiting ? "" : "The Dungeon Master is at work"}
           </p>
           <h2 className="text-gilded mt-1 font-display text-2xl font-bold tracking-wide">
-            {awaiting ? "" : "Weaving the scene…"}
+            {notice ? "Back to the adventure" : awaiting ? "" : "Weaving the scene…"}
           </h2>
         </div>
       </header>
 
       <div className="parchment flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-gold/40">
         <div className="relative flex shrink-0 justify-center gap-6 border-b border-gold/30 px-4 pt-3">
-          {!awaiting && (
+          {working && (
             <div className="absolute right-0 top-0">
               <Button onClick={onSync}>Sync</Button>
             </div>
@@ -120,7 +125,11 @@ export function PendingView({
         <div className="relative min-h-0 flex-1">
           {tab === "draft" && (
             <div className="absolute inset-0 p-4">
-              {parsedDraft ? (
+              {notice ? (
+                <div className="h-full overflow-y-auto scroll-thin">
+                  <p className="whitespace-pre-wrap font-body text-lg text-parchment">{notice}</p>
+                </div>
+              ) : parsedDraft ? (
                 <SnapshotLayout snapshot={parsedDraft} setComposerDraft={setComposerDraft} />
               ) : draft ? (
                 <div className="h-full overflow-y-auto scroll-thin">
@@ -140,7 +149,7 @@ export function PendingView({
           )}
           {tab === "timeline" && (
             <div className="absolute inset-0 overflow-y-auto scroll-thin p-4">
-              <EventTimeline events={events} running={!awaiting} />
+              <EventTimeline events={events} running={working} />
             </div>
           )}
         </div>

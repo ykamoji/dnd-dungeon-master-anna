@@ -1,18 +1,18 @@
 {
-  "schema": 2,
-  "host_capabilities": [
-    "llm.sample",
-    "aps.scope.user.read",
-    "aps.scope.user.write"
-  ],
+  "schema": 3,
   "required_executas": [
     {
       "tool_id": "bundled:dnd-game-master",
-      "min_version": "0.2.4",
+      "min_version": "0.3.0",
       "version": "latest"
     }
   ],
-  "permissions": [],
+  "storage": {
+    "scopes": {
+      "user": "r"
+    }
+  },
+  "system_prompt_addendum": "D&D Dungeon Master is played in its own window. When the user wants to play, start, resume or continue a campaign, call open_app_view('main'). Do not call create_campaign, draft_turn or resolve_turn yourself: the app window drives them with the saved campaign state, and calling them from chat cannot save a turn.",
   "ui": {
     "browser_permissions": [
       "microphone"
@@ -21,7 +21,6 @@
       "format": "static-spa",
       "entry": "index.html",
       "external_origins": [
-        "https://generativelanguage.googleapis.com",
         "https://raw.githubusercontent.com"
       ]
     },
@@ -29,30 +28,26 @@
       {
         "name": "main",
         "title": "D&D Dungeon Master",
-        "default": true
+        "default": true,
+        "min_size": {
+          "w": 960,
+          "h": 600
+        },
+        "default_size": {
+          "w": 1280,
+          "h": 800
+        },
+        "single_instance": true
       }
     ],
-    "host_api": {
-      "tools": [
-        "required:bundled:dnd-game-master"
-      ],
-      "storage": [
-        "get",
-        "set",
-        "delete"
-      ],
-      "llm": [
-        "complete"
-      ]
-    },
     "csp_overrides": {
       "script-src": [
         "'self'",
         "'sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo='",
-        "'sha256-npQ5ESpunr3FVCaTur0raRpWkMsZ6C4ix6Jae7mHKUE='",
-        "'sha256-qeWza/bAYb8hFDcSbOTo/kP+02b2G9wGMRbqQAChYHo='",
+        "'sha256-6q/wtSflhgrUZdlazhabdeXG9WqzTNyAWJI6odtzaIk='",
+        "'sha256-68YL9dGFDtY+raIWssITa6APR9KA8dDpKj4sOOZHDM4='",
         "'sha256-E7rC4mqDTMqvvA3OJF3uSPVwnekVy5o+uXPcIZzl1k4='",
-        "'sha256-JTn6clz00yxIcPcDFh0zRVdRYaUK6kgJQ01XvMqICBk='"
+        "'sha256-9BZkOaEv4b5JdM67hDQXMsNg/vzPEDYZ//U8E2KRSwA='"
       ]
     }
   }

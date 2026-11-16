@@ -85,7 +85,7 @@ body {
 
   /* Stone texture over tan gradient */
   background:
-    url("./texture.png") linear-gradient(180deg,
+    url("./texture.webp") linear-gradient(180deg,
       #f5e7c7 0%,
       #d8c39b 30%,
       #a78b63 70%,

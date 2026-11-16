@@ -25,7 +25,7 @@ export function ClassDnaProfile({ profile }: { profile: ClassProfile }) {
       </div> */}
       <div className="flex flex-row gap-2">
         <img
-          src={`characters/${profile.name}.png`}
+          src={`characters/${profile.name}.webp`}
           alt={profile.name}
           className="w-[75%] h-auto rounded-card border border-gold/30 object-cover object-top shadow-[0_0_20px_rgba(217,119,6,0.2)]"
           onError={(e) => {

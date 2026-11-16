@@ -1,235 +1,125 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GoogleGenAI, type LiveServerMessage, type Session } from "@google/genai";
-import { friendlyError, getLiveToken } from "@/lib/api";
+import { friendlyError, transcribeAudio } from "@/lib/api";
 
-// Gemini Live expects 16 kHz mono little-endian PCM.
-const SAMPLE_RATE = 16000;
-// Samples to accumulate before flushing a chunk (~128 ms at 16 kHz). Small
-// enough to stream with low latency, large enough to avoid tiny WS frames.
-const FLUSH_SAMPLES = 2048;
-
-// AudioWorklet module: runs on the audio thread. It accumulates input frames,
-// converts Float32 → 16-bit PCM there (off the main thread), and posts the raw
-// buffer to the main thread as a transferable (zero-copy). Kept as a string so
-// we don't need a separate public asset — loaded via a blob URL.
-const PCM_WORKLET_SRC = `
-class PcmWorklet extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this._pending = [];
-    this._len = 0;
-  }
-  process(inputs) {
-    const ch = inputs[0] && inputs[0][0];
-    if (ch) {
-      // slice() copies: the input buffer is reused across render quanta.
-      this._pending.push(ch.slice(0));
-      this._len += ch.length;
-      if (this._len >= ${FLUSH_SAMPLES}) {
-        const merged = new Float32Array(this._len);
-        let offset = 0;
-        for (const b of this._pending) { merged.set(b, offset); offset += b.length; }
-        this._pending = [];
-        this._len = 0;
-        const pcm = new Int16Array(merged.length);
-        for (let i = 0; i < merged.length; i++) {
-          const s = merged[i] < -1 ? -1 : merged[i] > 1 ? 1 : merged[i];
-          pcm[i] = s * 0x7fff;
-        }
-        this.port.postMessage(pcm.buffer, [pcm.buffer]);
-      }
-    }
-    return true;
-  }
-}
-registerProcessor("pcm-worklet", PcmWorklet);
-`;
+// Anna accepts recordings up to 10 minutes; a spoken action never needs more than two.
+const MAX_RECORDING_MS = 120_000;
 
 interface UseVoiceTranscriptionOptions {
-  /** Called with each chunk of transcribed text as it arrives from Gemini. */
+  /** Called with the transcribed text once a recording is processed. */
   onTranscript: (text: string) => void;
 }
 
 interface UseVoiceTranscription {
   listening: boolean;
-  /** True between clicking start and the session being ready. */
+  /** True while the microphone opens or the recording is being transcribed. */
   connecting: boolean;
   error: string | null;
   start: () => Promise<void>;
+  /** Stop recording and transcribe what was said. */
   stop: () => void;
 }
 
-/**
- * Base64-encode a PCM buffer. Uses chunked `String.fromCharCode.apply` instead
- * of a per-byte `+=` loop — an order of magnitude faster for kilobyte frames,
- * while staying under the argument-count limit that a full spread would hit.
- */
-function pcmBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const CHUNK = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode.apply(
-      null,
-      bytes.subarray(i, i + CHUNK) as unknown as number[],
-    );
-  }
-  return btoa(binary);
+function pickMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+  return ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"]
+    .find((type) => MediaRecorder.isTypeSupported(type));
 }
 
 /**
- * Streams microphone audio directly to the Gemini Live API and reports the
- * transcribed text via `onTranscript`. Uses a backend-minted ephemeral token
- * so the real API key never reaches the browser (see /api/live-token).
+ * Push-to-talk: records the microphone with MediaRecorder, then sends the clip
+ * to Anna's speech-to-text (`anna.audio.transcribe`). No API key and no
+ * third-party connection; the clip goes only to the Anna host.
  */
-export function useVoiceTranscription({
-  onTranscript,
-}: UseVoiceTranscriptionOptions): UseVoiceTranscription {
+export function useVoiceTranscription({ onTranscript }: UseVoiceTranscriptionOptions): UseVoiceTranscription {
   const [listening, setListening] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Keep the latest callback without forcing start/stop to be re-created.
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
 
-  const sessionRef = useRef<Session | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const workletRef = useRef<AudioWorkletNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const busyRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  const releaseMic = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  }, []);
 
   const stop = useCallback(() => {
-    if (workletRef.current) {
-      workletRef.current.port.onmessage = null;
-      workletRef.current.disconnect();
-      workletRef.current = null;
-    }
-    sourceRef.current?.disconnect();
-    sourceRef.current = null;
-
-    if (audioCtxRef.current && audioCtxRef.current.state !== "closed") {
-      void audioCtxRef.current.close();
-    }
-    audioCtxRef.current = null;
-
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-
-    try {
-      sessionRef.current?.close();
-    } catch {
-      /* already closed */
-    }
-    sessionRef.current = null;
-
-    setListening(false);
-    setConnecting(false);
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();  // onstop transcribes
   }, []);
 
   const start = useCallback(async () => {
-    if (sessionRef.current || connecting) return;
+    if (busyRef.current || recorderRef.current) return;
+    busyRef.current = true;
     setError(null);
     setConnecting(true);
-
     try {
-      const { token, model } = await getLiveToken();
-
-      const ai = new GoogleGenAI({
-        apiKey: token,
-        httpOptions: { apiVersion: "v1beta" },
-      });
-
-      const session = await ai.live.connect({
-        model,
-        // Config is locked by the backend token constraints; don't re-send it.
-        callbacks: {
-          onmessage: (msg: LiveServerMessage) => {
-            const sc = msg.serverContent;
-            // The recognized text can arrive as a model text turn OR via the
-            // (interim/final) input/output transcription fields, depending on
-            // the model. Emit whatever text we find.
-            for (const part of sc?.modelTurn?.parts ?? []) {
-              if (part.text) onTranscriptRef.current(part.text);
-            }
-            const t =
-              sc?.outputTranscription?.text ??
-              sc?.inputTranscription?.text ??
-              sc?.interimInputTranscription?.text;
-            if (t) onTranscriptRef.current(t);
-          },
-          onerror: (e) => {
-            setError(friendlyError(e, "The voice connection failed. Please try again."));
-            stop();
-          },
-          onclose: (e) => {
-            // A clean end-of-turn closes with code 1000; anything else is a
-            // real failure (bad model, expired/invalid token, quota) that would
-            // otherwise be invisible.
-            if (e && e.code !== 1000) {
-              console.error("Voice connection closed", e.code, e.reason);
-              setError("The voice connection closed unexpectedly. Please try again.");
-            }
-            setListening(false);
-          },
-        },
-      });
-      sessionRef.current = session;
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext;
-      const audioCtx = new AudioCtx({ sampleRate: SAMPLE_RATE });
-      audioCtxRef.current = audioCtx;
-      // A context created inside a gesture may still start suspended; without a
-      // running context the worklet never runs (so no audio is ever sent).
-      if (audioCtx.state === "suspended") await audioCtx.resume();
-
-      // Load the PCM worklet from an inline blob module.
-      const moduleUrl = URL.createObjectURL(
-        new Blob([PCM_WORKLET_SRC], { type: "application/javascript" }),
-      );
-      try {
-        await audioCtx.audioWorklet.addModule(moduleUrl);
-      } finally {
-        URL.revokeObjectURL(moduleUrl);
-      }
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      sourceRef.current = source;
-
-      const worklet = new AudioWorkletNode(audioCtx, "pcm-worklet");
-      workletRef.current = worklet;
-      worklet.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-        if (!sessionRef.current) return;
-        sessionRef.current.sendRealtimeInput({
-          audio: {
-            data: pcmBufferToBase64(e.data),
-            mimeType: `audio/pcm;rate=${SAMPLE_RATE}`,
-          },
-        });
+      const mimeType = pickMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
+      recorder.onstop = async () => {
+        releaseMic();
+        recorderRef.current = null;
+        const clip = new Blob(chunksRef.current, { type: recorder.mimeType || mimeType || "audio/webm" });
+        chunksRef.current = [];
+        if (!mountedRef.current) return;
+        setListening(false);
+        if (!clip.size) {
+          busyRef.current = false;
+          setConnecting(false);
+          return;
+        }
+        setConnecting(true);
+        try {
+          const text = await transcribeAudio(clip);
+          if (mountedRef.current && text) onTranscriptRef.current(text);
+          else if (mountedRef.current) setError("No speech was recognised. Please try again.");
+        } catch (err) {
+          if (mountedRef.current) setError(friendlyError(err, "Your voice could not be transcribed. Please try again."));
+        } finally {
+          busyRef.current = false;
+          if (mountedRef.current) setConnecting(false);
+        }
       };
-
-      source.connect(worklet);
-      // Keep the node in the graph; it writes no output so it stays silent.
-      worklet.connect(audioCtx.destination);
-
+      recorderRef.current = recorder;
+      recorder.start();
+      timerRef.current = setTimeout(stop, MAX_RECORDING_MS);
       setConnecting(false);
       setListening(true);
     } catch (err) {
+      releaseMic();
+      recorderRef.current = null;
+      busyRef.current = false;
+      setConnecting(false);
+      setListening(false);
       setError(friendlyError(err, "Voice input could not be started. Please try again."));
-      stop();
     }
-  }, [connecting, stop]);
+  }, [releaseMic, stop]);
 
-  // Release the mic / socket if the component unmounts mid-session.
-  useEffect(() => stop, [stop]);
+  // Release the microphone without transcribing if the component unmounts.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      releaseMic();
+    };
+  }, [releaseMic]);
 
   return { listening, connecting, error, start, stop };
 }

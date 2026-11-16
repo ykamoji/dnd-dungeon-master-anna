@@ -277,7 +277,14 @@ def retrieve_campaign_files(query: str, current_section: str = "", limit: int = 
 
 
 def get_state(campaign: dict[str, Any]) -> dict[str, Any]:
-    """Return the latest available snapshot context, carrying party state forward."""
+    """Return the latest available snapshot context, carrying party state forward.
+
+    Accepts the compact v2 state (``recent_events``) and the legacy full
+    campaign record (``events``).
+    """
+    recent = campaign.get("recent_events")
+    if not isinstance(recent, list):
+        recent = campaign.get("events") or []
     return {
         "campaign_id": campaign.get("id"),
         "campaign_name": campaign.get("name"),
@@ -288,7 +295,7 @@ def get_state(campaign: dict[str, Any]) -> dict[str, Any]:
         "party_breakdown": campaign.get("party_breakdown") or {},
         "quest_log": (campaign.get("quest_log") or [])[-8:],
         "state_notes": (campaign.get("state_notes") or [])[-12:],
-        "recent_events": (campaign.get("events") or [])[-12:],
+        "recent_events": recent[-12:],
         "metadata": campaign.get("metadata") or {},
     }
 
@@ -405,5 +412,6 @@ def party_breakdown(party: list[dict[str, Any]]) -> dict[str, int]:
         "level": sum(int(member.get("level") or 1) for member in party),
         "perception": max((int(member.get("passive_perception") or 10) for member in party), default=10),
         "health": sum(int(member.get("hp") or 0) for member in party),
+        "max_health": sum(int(member.get("max_hp") or member.get("hp") or 0) for member in party),
         "money": 50,
     }

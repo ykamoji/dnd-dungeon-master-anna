@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   // Relative paths keep the icon working under Anna's static bundle prefix.
   icons: {
     icon: [
-      { url: "logos/d20.png", type: "image/png" },
+      { url: "logos/d20.webp", type: "image/webp" },
     ],
   },
 };

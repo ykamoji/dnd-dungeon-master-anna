@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getVoiceAvailable } from "@/lib/api";
 
-/** True only once the Executa confirms a voice credential is configured. */
+/** True once the host's speech catalogue lists a text-to-speech model. */
 export function useVoiceAvailable(): boolean {
   const [available, setAvailable] = useState(false);
   useEffect(() => {
