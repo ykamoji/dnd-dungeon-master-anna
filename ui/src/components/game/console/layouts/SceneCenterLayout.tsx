@@ -7,7 +7,7 @@ import { GameMasterPanel } from "../panels/GameMasterPanel";
 /** Journey rail (left) · scene reader (center) · GM command dock (below). */
 export function SceneCenterLayout() {
   return (
-    <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+    <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[18rem_minmax(0,1fr)]">
       <aside className="parchment hidden min-h-0 rounded-card border border-stone-2 p-3 lg:block">
         <JourneyMapPanel orientation="vertical" />
       </aside>

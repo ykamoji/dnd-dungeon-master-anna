@@ -25,8 +25,8 @@ interface DieProps {
 }
 
 const DIE_SRC: Record<DieProps["sides"], string> = {
-  20: "logos/d20_empty.png",
-  100: "logos/d100.png",
+  20: "logos/d20_empty.webp",
+  100: "logos/d100.webp",
 };
 
 /** Roll spin settle time (seconds); the roll timeout below mirrors it in ms. */

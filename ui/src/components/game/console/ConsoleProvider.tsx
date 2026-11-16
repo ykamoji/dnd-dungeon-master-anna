@@ -13,7 +13,10 @@ import {
 } from "react";
 import { useGame } from "@/context/GameContext";
 import { GAME_CATALOG } from "@/lib/games";
-import { createCampaign, friendlyError, getCampaignRecord, invokeTool, saveCampaignRecord, traceToEvents, type CampaignRecord } from "@/lib/api";
+import {
+  createCampaign, draftTurn, friendlyError, getPendingDraft, isDraftLive, progressToEvents, recoverRun, resolveTurn, traceToEvents,
+  type Draft, type ToolProgress,
+} from "@/lib/api";
 import type { SessionEvent, TurnSnapshot } from "@/lib/types";
 
 export type RunStatus = "idle" | "running" | "awaiting_approval" | "rejecting" | "error";
@@ -29,35 +32,52 @@ interface ConsoleState {
   error: string | null;
   streamDelaying: boolean;
   readerTab: "scene" | "timeline";
+  /** A Dungeon Master reply that is not a draft (e.g. an out-of-game request was declined). */
+  notice: string | null;
 }
 const initialState: ConsoleState = {
   activeIndex: -1, viewPending: false, runStatus: "idle", events: [], pendingDraft: null,
-  composerDraft: "", error: null, streamDelaying: false, readerTab: "scene",
+  composerDraft: "", error: null, streamDelaying: false, readerTab: "scene", notice: null,
 };
 type Action =
   | { type: "SELECT_TURN"; index: number }
   | { type: "SELECT_PENDING" }
   | { type: "SET_COMPOSER"; text: string }
   | { type: "RUN_START"; events?: SessionEvent[] }
+  | { type: "APPEND_EVENTS"; events: SessionEvent[] }
   | { type: "AWAIT_APPROVAL"; draft: string; events: SessionEvent[] }
   | { type: "RUN_DONE" }
   | { type: "REJECTING" }
   | { type: "REJECTED" }
   | { type: "RUN_ERROR"; message: string }
+  | { type: "RUN_NOTICE"; message: string; events: SessionEvent[] }
   | { type: "DISMISS_ERROR" }
   | { type: "SHOW_ERROR"; message: string }
   | { type: "SET_READER_TAB"; tab: "scene" | "timeline" };
 function reducer(state: ConsoleState, action: Action): ConsoleState {
   switch (action.type) {
-    case "SELECT_TURN": return { ...state, activeIndex: action.index, viewPending: false };
+    case "SELECT_TURN": return { ...state, activeIndex: action.index, viewPending: false, notice: null };
     case "SELECT_PENDING": return { ...state, viewPending: true };
     case "SET_COMPOSER": return { ...state, composerDraft: action.text };
-    case "RUN_START": return { ...state, runStatus: "running", viewPending: true, events: action.events ?? [], pendingDraft: null, error: null };
+    case "RUN_START": return { ...state, runStatus: "running", viewPending: true, events: action.events ?? [], pendingDraft: null, error: null, notice: null };
+    case "APPEND_EVENTS": {
+      if (state.runStatus !== "running" || !action.events.length) return state;
+      const seen = new Set(state.events.map((event) => event.id));
+      const fresh = action.events.filter((event) => !seen.has(event.id));
+      return fresh.length ? { ...state, events: [...state.events, ...fresh] } : state;
+    }
     case "AWAIT_APPROVAL": return { ...state, runStatus: "awaiting_approval", viewPending: true, pendingDraft: action.draft, events: action.events, error: null };
     case "RUN_DONE": return { ...state, runStatus: "idle", viewPending: false, events: [], pendingDraft: null, error: null };
     case "REJECTING": return { ...state, runStatus: "rejecting", pendingDraft: null };
     case "REJECTED": return { ...state, runStatus: "idle", viewPending: false, events: [], pendingDraft: null, error: null };
-    case "RUN_ERROR": return { ...state, runStatus: "error", viewPending: false, error: action.message };
+    case "RUN_ERROR": return { ...state, runStatus: "error", viewPending: false, error: action.message, notice: null };
+    case "RUN_NOTICE": {
+      const seen = new Set(state.events.map((event) => event.id));
+      return {
+        ...state, runStatus: "idle", viewPending: true, pendingDraft: null, error: null, notice: action.message,
+        events: [...state.events, ...action.events.filter((event) => !seen.has(event.id))],
+      };
+    }
     case "SHOW_ERROR": return { ...state, error: action.message };
     case "DISMISS_ERROR": return { ...state, runStatus: state.runStatus === "error" ? "idle" : state.runStatus, error: null };
     case "SET_READER_TAB": return { ...state, readerTab: action.tab };
@@ -94,6 +114,7 @@ interface ConsoleContextValue {
   setComposerDraft: (text: string) => void;
   readerTab: "scene" | "timeline";
   setReaderTab: (tab: "scene" | "timeline") => void;
+  notice: string | null;
 }
 const ConsoleContext = createContext<ConsoleContextValue | null>(null);
 
@@ -172,8 +193,7 @@ export function ConsoleProvider({ history, historyLoading, historyError, progres
       return;
     }
     busyRef.current = true;
-    // The setup agent runs inside one tool call (no stream), so seed the live
-    // timeline with its kickoff instead of leaving the pending view blank.
+    // Setup runs as an Anna tool job; its progress events extend this timeline live.
     const invocationId = `anna-setup-${campaignId}`;
     const timestamp = Math.floor(Date.now() / 1000);
     dispatch({
@@ -183,6 +203,7 @@ export function ConsoleProvider({ history, historyLoading, historyError, progres
         { id: invocationId + "-setup", invocation_id: invocationId, timestamp: timestamp + 1, author: "setup_executor", content: { parts: [{ text: "Gathering the story, party classes and opening scene…" }] } },
       ],
     });
+    const onProgress = (event: ToolProgress) => dispatch({ type: "APPEND_EVENTS", events: progressToEvents(event, invocationId) });
     void createCampaign({
       campaignId,
       name: entry.title,
@@ -192,7 +213,7 @@ export function ConsoleProvider({ history, historyLoading, historyError, progres
         name: member.name.trim(), class: member.className, role: member.role || member.className,
         skills: member.skills || [], ancestry: "Human",
       })),
-    }).then(() => {
+    }, { onProgress }).then(() => {
       reloadHistory();
       dispatch({ type: "RUN_DONE" });
     }).catch((error: unknown) => {
@@ -208,15 +229,36 @@ export function ConsoleProvider({ history, historyLoading, historyError, progres
     runSetup();
   }, [game.autoStart, campaignId, gameDispatch, runSetup]);
 
-  const restorePending = useCallback(async () => {
-    if (!campaignId) return;
-    const campaign = await getCampaignRecord(campaignId);
-    if (!campaign?.pending) return;
-    const draft = campaign.pending as Record<string, any>;
-    const invocationId = `anna-${draft.id || campaignId}`;
+  const showDraft = useCallback((draft: Draft) => {
     setPendingObject(draft);
-    dispatch({ type: "AWAIT_APPROVAL", draft: toDraftSnapshot(draft), events: pendingEvents(String(draft.action || ""), draft, invocationId) });
-  }, [campaignId]);
+    dispatch({ type: "AWAIT_APPROVAL", draft: toDraftSnapshot(draft), events: pendingEvents(String(draft.action || ""), draft, `anna-${draft.id}`) });
+  }, []);
+
+  /** Show the saved pending draft, or pick up a turn/setup job that outlived a reload. */
+  const restorePending = useCallback(async () => {
+    if (!campaignId || busyRef.current) return;
+    const draft = await getPendingDraft(campaignId);
+    if (draft) { showDraft(draft); return; }
+    const invocationId = `anna-live-${campaignId}`;
+    let adopted = false;
+    try {
+      const recovered = await recoverRun(campaignId, {
+        onRunning: (kind) => {
+          adopted = true;
+          busyRef.current = true;
+          const timestamp = Math.floor(Date.now() / 1000);
+          const text = kind === "setup" ? "Resuming the opening scene…" : "Resuming the turn in progress…";
+          dispatch({ type: "RUN_START", events: [{ id: invocationId + "-resume", invocation_id: invocationId, timestamp, author: "dnd_game_master_agent", content: { parts: [{ text }] } }] });
+        },
+        onProgress: (event) => dispatch({ type: "APPEND_EVENTS", events: progressToEvents(event, invocationId) }),
+      });
+      if (recovered.kind === "draft") showDraft(recovered.draft);
+      else if (recovered.kind === "setup") { reloadHistory(); dispatch({ type: "RUN_DONE" }); }
+      else if (adopted) dispatch({ type: "RUN_DONE" });
+    } finally {
+      if (adopted) busyRef.current = false;
+    }
+  }, [campaignId, reloadHistory, showDraft]);
 
   useEffect(() => {
     if (!campaignId || game.autoStart) return;
@@ -235,47 +277,52 @@ export function ConsoleProvider({ history, historyLoading, historyError, progres
       return;
     }
     busyRef.current = true;
-    dispatch({ type: "RUN_START" });
+    const invocationId = `anna-live-${campaignId}`;
+    const timestamp = Math.floor(Date.now() / 1000);
+    dispatch({ type: "RUN_START", events: [{ id: `${invocationId}-player-${timestamp}`, invocation_id: invocationId, timestamp, author: "user", content: { parts: [{ text: action }] } }] });
     try {
-      const campaign = await getCampaignRecord(campaignId);
-      if (!campaign) throw new Error("The saved campaign could not be found. Resume it again to continue.");
-      if (campaign.pending) throw new Error("Resolve the pending turn before sending another action.");
-      const draft = await invokeTool<Record<string, any>>("draft_turn", { campaign, action, dice: dice || {} });
+      const draft = await draftTurn(campaignId, action, { ...(dice || {}) }, {
+        onProgress: (event) => dispatch({ type: "APPEND_EVENTS", events: progressToEvents(event, invocationId) }),
+      });
       if (draft.blocked) {
-        dispatch({ type: "RUN_ERROR", message: String(draft.narrative || "That request is outside this adventure.") });
+        // A declined request is the DM answering in character, not a failure.
+        const message = String(draft.narrative || "That request is outside this adventure.");
+        const reply: SessionEvent = { id: `${invocationId}-notice-${timestamp}`, invocation_id: invocationId, timestamp: timestamp + 1, author: "dnd_game_master_agent", content: { parts: [{ text: message }] } };
+        dispatch({ type: "RUN_NOTICE", message, events: [...traceToEvents(draft.trace, invocationId, timestamp), reply] });
+        dispatch({ type: "SET_COMPOSER", text: action });
         return;
       }
-      const updated = { ...campaign, pending: draft, updated_at: new Date().toISOString() };
-      await saveCampaignRecord(updated);
-      setPendingObject(draft);
-      dispatch({ type: "AWAIT_APPROVAL", draft: toDraftSnapshot(draft), events: pendingEvents(action, draft, `anna-${draft.id}`) });
+      showDraft(draft);
     } catch (error) {
       dispatch({ type: "RUN_ERROR", message: friendlyError(error, "The Dungeon Master could not draft this turn. Please try again.") });
       // Hand the action back so the player can resend it without retyping.
       dispatch({ type: "SET_COMPOSER", text: action });
     } finally { busyRef.current = false; }
-  }, [campaignId, state.runStatus]);
+  }, [campaignId, showDraft, state.runStatus]);
 
   const resolve = useCallback(async (approved: boolean) => {
     if (!campaignId || busyRef.current || state.runStatus !== "awaiting_approval") return;
     busyRef.current = true;
     dispatch({ type: approved ? "RUN_START" : "REJECTING" });
     try {
-      const campaign = await getCampaignRecord(campaignId);
-      const draft = campaign?.pending || pendingObject;
-      if (!campaign || !draft) throw new Error("The pending draft is no longer available.");
-      const updated = await invokeTool<CampaignRecord>("resolve_turn", { campaign, draft, approved });
-      await saveCampaignRecord(updated);
+      await resolveTurn(campaignId, approved, pendingObject);
       setPendingObject(null);
       reloadHistory();
       dispatch({ type: approved ? "RUN_DONE" : "REJECTED" });
     } catch (error) {
       const message = friendlyError(error, "The draft could not be resolved. Please try again.");
       dispatch({ type: "RUN_ERROR", message });
-      // Put the draft back on screen so Approve / Reject can be pressed again.
-      try { await restorePending(); dispatch({ type: "SHOW_ERROR", message }); } catch { /* error already shown */ }
+      // Put the draft back on screen so Approve / Reject can be pressed again. A draft whose
+      // save failed exists only in memory, so fall back to it while it is still live.
+      busyRef.current = false;
+      try {
+        const saved = await getPendingDraft(campaignId);
+        const draft = saved ?? (await isDraftLive(campaignId, pendingObject) ? pendingObject : null);
+        if (draft) { showDraft(draft); dispatch({ type: "SHOW_ERROR", message }); }
+        else await restorePending();
+      } catch { /* error already shown */ }
     } finally { busyRef.current = false; }
-  }, [campaignId, pendingObject, reloadHistory, restorePending, state.runStatus]);
+  }, [campaignId, pendingObject, reloadHistory, restorePending, showDraft, state.runStatus]);
 
   const selectTurn = useCallback((index: number) => dispatch({ type: "SELECT_TURN", index }), []);
   const selectPending = useCallback(() => dispatch({ type: "SELECT_PENDING" }), []);
@@ -297,7 +344,7 @@ export function ConsoleProvider({ history, historyLoading, historyError, progres
     composerDraft: state.composerDraft, error: state.error, streamDelaying: state.streamDelaying,
     submitTurn, approve, reject, reconnectStream, dismissError,
     retrySetup: setupFailed && !history.length ? runSetup : null, selectTurn, selectPending, setComposerDraft,
-    readerTab: state.readerTab, setReaderTab,
+    readerTab: state.readerTab, setReaderTab, notice: state.notice,
   };
   return <ConsoleContext.Provider value={value}>{children}</ConsoleContext.Provider>;
 }

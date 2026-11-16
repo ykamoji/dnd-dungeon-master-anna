@@ -105,6 +105,8 @@ export interface PartyBreakDown {
   level: number;
   perception: number;
   health: number;
+  /** Sum of the members' max HP (0.3+). */
+  max_health?: number;
   money: number;
 }
 

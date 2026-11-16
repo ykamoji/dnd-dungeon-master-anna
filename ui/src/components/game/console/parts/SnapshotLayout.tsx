@@ -164,7 +164,7 @@ export function SnapshotLayout({
   return (
     <div className={`flex h-full gap-4 overflow-hidden pr-2 ${!current ? "pb-10" : ""}`}>
       {/* Left Column: Metadata & Actions */}
-      <div className="overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex w-1/3 flex-shrink-0 flex-col gap-6 overflow-y-auto pb-6">
+      <div className="overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex w-[clamp(13rem,33%,26rem)] flex-shrink-0 flex-col gap-6 overflow-y-auto pb-6">
         <header>
           {chapterLine && (
             <p className="font-rune text-xs uppercase tracking-widest text-parchment-dim">
@@ -238,7 +238,12 @@ export function SnapshotLayout({
                 h2: ({ node, ...props }) => <h2 className="text-lg font-display text-gold mt-4 mb-2" {...props} />,
                 h3: ({ node, ...props }) => <h3 className="text-md font-display text-gold mt-3 mb-2" {...props} />,
                 blockquote: ({ node, ...props }) => <blockquote className="border-l-2 border-gold/50 pl-4 italic text-parchment-dim" {...props} />,
+                // Model-written text must not open links or load remote images.
+                a: ({ children }) => <span className="text-gold">{children}</span>,
+                img: () => null,
+                iframe: () => null,
               }}
+              skipHtml
             >
               {s.narrative}
             </ReactMarkdown>

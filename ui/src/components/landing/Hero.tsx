@@ -55,7 +55,7 @@ export function Hero() {
       >
         <span className="h-px w-16 bg-gradient-to-r from-transparent to-gold/50 sm:w-50" />
         <div className="grid h-32 w-32 place-items-center">
-          <img src="logos/d20.png"
+          <img src="logos/d20.webp"
             className=""
             alt="d20"
           />
@@ -71,7 +71,7 @@ export function Hero() {
       >
         {/* <span className="h-px w-10 bg-gradient-to-l from-transparent to-gold/50 sm:w-10" /> */}
         <div className="grid h-32 w-32 place-items-center">
-          <img src="logos/dm_logo.png"
+          <img src="logos/dm_logo.webp"
             className="rounded-full [mask-image:radial-gradient(ellipse_at_center,_black_5%,_transparent_100%)] [clip-path:inset(10%)]"
           />
         </div>
@@ -118,7 +118,7 @@ export function Hero() {
         className="mt-5 flex flex-col items-center gap-3 cursor-pointer text-parchment-dim transition-colors hover:text-gold focus:outline-none"
       >
         <img
-          src="logos/arrow.png"
+          src="logos/arrow.webp"
           className="h-20 w-20"
         />
         <span className="font-rune text-xs uppercase tracking-[0.3em] sm:text-sm">

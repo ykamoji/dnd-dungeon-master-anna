@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Yash
 # SPDX-License-Identifier: MIT
-"""Package a PyInstaller executable in Anna's platform-specific archive."""
+"""Package the PyInstaller one-folder build in Anna's platform-specific archive."""
 
 import argparse
 import hashlib
@@ -36,7 +36,9 @@ def archive_manifest(name: str, version: str, entrypoint: str) -> bytes:
 def package(platform: str) -> Path:
     windows = platform == "windows-x86_64"
     executable = "dnd-game-master.exe" if windows else "dnd-game-master"
-    built = ROOT / "build" / "dist" / executable
+    # PyInstaller --onedir output: the executable plus its _internal/ folder.
+    folder = ROOT / "build" / "dist" / "dnd-game-master"
+    built = folder / executable
     if not built.is_file():
         raise SystemExit(f"Built executable not found: {built}")
     if not windows:
@@ -49,19 +51,19 @@ def package(platform: str) -> Path:
     suffix = "zip" if windows else "tar.gz"
     output = EXECUTA / "dist" / f"dnd-game-master-v{version}-{platform}.{suffix}"
     output.parent.mkdir(parents=True, exist_ok=True)
+    files = sorted(path for path in folder.rglob("*") if path.is_file())
     if windows:
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", manifest)
-            archive.write(built, arcname=entrypoint)
+            for path in files:
+                archive.write(path, arcname=f"bin/{path.relative_to(folder).as_posix()}")
     else:
         with tarfile.open(output, "w:gz") as archive:
             info = tarfile.TarInfo("manifest.json")
             info.size, info.mode = len(manifest), 0o644
             archive.addfile(info, io.BytesIO(manifest))
-            folder = tarfile.TarInfo("bin")
-            folder.type, folder.mode = tarfile.DIRTYPE, 0o755
-            archive.addfile(folder)
-            archive.add(built, arcname=entrypoint)
+            # Directories, symlinks and modes come along as built (the bootloader must stay executable).
+            archive.add(folder, arcname="bin")
 
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
     output.with_suffix(output.suffix + ".sha256").write_text(

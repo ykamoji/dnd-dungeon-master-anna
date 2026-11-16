@@ -7,10 +7,10 @@ build/
 *.spec
 .env
 .env.*
-!.env.example
 ui/node_modules/
 ui/.next/
 ui/out/
-executas/*
-bundle/_next
-bundle/_not-found
+executas/*/dist/
+executas/*/.venv/
+executas/*/.anna/
+*.egg-info/

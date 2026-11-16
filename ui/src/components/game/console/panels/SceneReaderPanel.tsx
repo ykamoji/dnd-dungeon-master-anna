@@ -30,6 +30,7 @@ export function SceneReaderPanel() {
     reconnectStream,
     readerTab,
     setReaderTab,
+    notice,
   } = useConsole();
 
   const [historicalEvents, setHistoricalEvents] = useState<SessionEvent[]>([]);
@@ -68,6 +69,7 @@ export function SceneReaderPanel() {
         events={events}
         awaiting={runStatus === "awaiting_approval"}
         draft={pendingDraft}
+        notice={notice}
         onSync={reconnectStream}
       />
     );

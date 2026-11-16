@@ -45,8 +45,8 @@ export const PRELOAD_PARTY: Omit<PartyMember, "id">[] = [
 
 /** Landing-page slideshow stills (placeholders + ToA mirror art). */
 export const LANDING_STILLS: { src: string; alt: string }[] = [
-  { src: `landing/bg_1.png`, alt: "bg_1" },
-  { src: `landing/bg_4.png`, alt: "bg_4" },
-  { src: `landing/bg_2.png`, alt: "bg_2" },
-  { src: `landing/bg_3.png`, alt: "bg_3" },
+  { src: `landing/bg_1.webp`, alt: "bg_1" },
+  { src: `landing/bg_4.webp`, alt: "bg_4" },
+  { src: `landing/bg_2.webp`, alt: "bg_2" },
+  { src: `landing/bg_3.webp`, alt: "bg_3" },
 ];

@@ -3,14 +3,18 @@ from __future__ import annotations
 
 import re
 
+# Only phrases aimed at the model's instructions. In-character roleplay ("I pretend to be
+# a merchant", "act as a decoy", "you are now a prisoner of the cult") must pass: the
+# player's text is quoted as data in every prompt, and the evaluator reviews each draft.
 _INJECTION_PATTERNS = (
-    r"ignore\s+(your|previous|all)\s+(instructions|rules|prompts)",
-    r"you\s+are\s+now\s+a",
-    r"pretend\s+to\s+be",
-    r"act\s+as\s+(if\s+you\s+are\s+)?a",
-    r"forget\s+(everything|your\s+instructions)",
-    r"system\s*prompt",
-    r"jailbreak",
+    r"\b(ignore|disregard|override|bypass)\s+((all|any|your|these|those)\s+|(the\s+)?(previous|prior|above|earlier|original|system)\s+)+(\w+\s+)?(instructions|rules|prompts?|guidelines|directives)\b(?!\s+(of|in|at|on)\b)",
+    r"\bforget\s+(everything|all|your)\s+(\w+\s+)?(instructions|rules|prompts?|guidelines|you\s+were\s+told)",
+    r"\bforget\s+everything\b",
+    r"\b(system|developer|hidden|initial)\s+prompt",
+    r"\b(reveal|show|print|repeat|leak|output)\s+(me\s+)?(your|the)\s+(\w+\s+)?(instructions|prompt|rules)",
+    r"\bjailbreak",
+    r"\bdeveloper\s+mode\b",
+    r"\byou\s+are\s+(now\s+)?(no\s+longer\s+)?(an?\s+)?(ai|assistant|chatbot|language\s+model|llm|gpt|claude)\b",
 )
 _OUT_OF_SCOPE_PATTERNS = (
     r"write\s+(me\s+)?(a\s+)?(python|javascript|code|script|program)",
@@ -30,9 +34,19 @@ _OUT_OF_SCOPE_REFUSAL = (
 
 
 def evaluate_input_safety(text: str) -> tuple[bool, str, str]:
+    """Return (safe, reason, in-character refusal) for a player's action."""
     value = (text or "").lower()
     if any(re.search(pattern, value) for pattern in _INJECTION_PATTERNS):
         return False, "Prompt injection detected", _INJECTION_REFUSAL
     if any(re.search(pattern, value) for pattern in _OUT_OF_SCOPE_PATTERNS):
         return False, "Out-of-scope request", _OUT_OF_SCOPE_REFUSAL
     return True, "", ""
+
+
+def evaluate_setup_safety(*texts: str) -> str:
+    """Return a player-facing error when a premise or party name targets the model's instructions."""
+    for text in texts:
+        value = (text or "").lower()
+        if any(re.search(pattern, value) for pattern in _INJECTION_PATTERNS):
+            return "Campaign names, premises and party names can only describe the adventure. Please rephrase."
+    return ""
