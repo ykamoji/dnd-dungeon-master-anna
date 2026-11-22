@@ -134,6 +134,7 @@ type AnnaRuntime = {
 type TtsModel = {
   name?: string;
   id?: string;
+  isUserPreferred?: boolean;
   capabilities?: {
     voices?: Array<{ id: string; label?: string; gender?: string; languages?: string[] }>;
     defaultVoice?: string;
@@ -887,14 +888,15 @@ export async function deleteCampaign(campaignId: string): Promise<void> {
 
 let ttsModelPromise: Promise<TtsModel | null> | null = null;
 
-/** The first text-to-speech model in the user's catalogue, or null when there is none. */
+/** The user's preferred catalogue TTS model, falling back to the first usable one. */
 function getTtsModel(): Promise<TtsModel | null> {
   ttsModelPromise ??= (async () => {
     const { anna, preview } = await getRuntime();
     if (preview || typeof anna.llm?.catalog !== "function") return null;
     const catalog = await anna.llm.catalog({ serviceType: "tts" });
     const models = Array.isArray(catalog?.models) ? catalog.models : [];
-    return models.find((model) => model?.capabilities?.voices?.length || model?.capabilities?.defaultVoice) ?? null;
+    const usable = models.filter((model) => model?.capabilities?.voices?.length || model?.capabilities?.defaultVoice);
+    return usable.find((model) => model.isUserPreferred) ?? usable[0] ?? null;
   })().catch((error) => {
     console.warn("Could not read the speech catalogue.", error);
     ttsModelPromise = null;
@@ -914,17 +916,110 @@ export async function getSpeechChunkLimit(): Promise<number> {
   return Number.isFinite(limit) && limit >= 100 ? limit : 1000;
 }
 
-/** A catalogue voice for a hint from `resolveVoiceName` ("female:123"), stable per speaker. */
-function pickVoice(model: TtsModel, hint?: string): string | undefined {
+/** Gender and stable hash of the speaker name encoded by `resolveVoiceName` (for example, "female:123"). */
+function parseVoiceHint(hint?: string): { gender: string; speakerHash: number } {
+  const [gender = "any", hashText] = String(hint || "").split(":");
+  return { gender, speakerHash: Number(hashText) };
+}
+
+/** Voice candidates for a speaker, preferring voices matching their gender. */
+function voiceCandidates(model: TtsModel, hint?: string): string[] {
   const voices = model.capabilities?.voices ?? [];
-  const [gender, seedText] = String(hint || "").split(":");
-  const seed = Number(seedText);
-  if (!voices.length || !Number.isFinite(seed)) return model.capabilities?.defaultVoice ?? voices[0]?.id;
+  const { gender } = parseVoiceHint(hint);
   const matching = gender === "female" || gender === "male"
     ? voices.filter((voice) => String(voice.gender || "").toLowerCase() === gender)
     : [];
-  const pool = matching.length ? matching : voices;
-  return pool[Math.abs(seed) % pool.length]?.id;
+  const pool = matching.length ? [...matching, ...voices.filter((voice) => !matching.includes(voice))] : voices;
+  return [...new Set([
+    ...pool.map((voice) => voice.id),
+    model.capabilities?.defaultVoice,
+  ].filter((id): id is string => Boolean(id)))];
+}
+
+/** The hint carries a hash of the speaker's string name; use it to choose an initial voice. */
+function pickVoice(model: TtsModel, hint?: string, candidates = voiceCandidates(model, hint)): string | undefined {
+  const { gender, speakerHash } = parseVoiceHint(hint);
+  if (!candidates.length) return model.capabilities?.defaultVoice;
+  if (!Number.isFinite(speakerHash)) return model.capabilities?.defaultVoice ?? candidates[0];
+  const voices = model.capabilities?.voices ?? [];
+  const matching = gender === "female" || gender === "male"
+    ? voices.filter((voice) => String(voice.gender || "").toLowerCase() === gender)
+    : [];
+  const primary = matching.length ? matching.map((voice) => voice.id) : voices.map((voice) => voice.id);
+  const pool = primary.length ? primary : candidates;
+  return pool[Math.abs(speakerHash) % pool.length];
+}
+
+function savedVoiceKey(model: TtsModel, hint?: string): string | null {
+  if (!hint) return null;
+  const modelKey = model.name ?? model.id;
+  if (!modelKey) return null;
+  return `${PREFIX}:tts-voice:${encodeURIComponent(modelKey)}:${encodeURIComponent(hint)}`;
+}
+
+function getSavedVoice(model: TtsModel, hint: string | undefined): string | undefined {
+  const key = savedVoiceKey(model, hint);
+  if (!key || typeof localStorage === "undefined") return undefined;
+  try {
+    const voice = localStorage.getItem(key) ?? undefined;
+    return voice || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveVoice(model: TtsModel, hint: string | undefined, voice: string | undefined): void {
+  const key = savedVoiceKey(model, hint);
+  if (!key || !voice || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(key, voice);
+  } catch {
+    // Voice persistence is best effort; playback should still succeed.
+  }
+}
+
+function errorData(error: unknown): AnyRecord {
+  const value = error as AnyRecord | null;
+  return (value?.data || value?.error?.data || {}) as AnyRecord;
+}
+
+function allowedVoiceIds(error: unknown): string[] {
+  const allowed = errorData(error).allowed;
+  if (!Array.isArray(allowed)) return [];
+  return [...new Set(allowed.map((voice) => {
+    if (typeof voice === "string") return voice;
+    if (voice && typeof voice === "object") return String((voice as AnyRecord).id || "");
+    return "";
+  }).filter(Boolean))];
+}
+
+/** Pick one untried alternate, preferring an API-provided allow-list and matching gender. */
+function retryVoice(
+  model: TtsModel,
+  hint: string | undefined,
+  rejected: string | undefined,
+  allowed: string[],
+  excluded: Set<string>,
+): string | undefined {
+  const voices = model.capabilities?.voices ?? [];
+  const ids = allowed.length ? allowed : voices.map((voice) => voice.id);
+  const { gender, speakerHash } = parseVoiceHint(hint);
+  const matching = gender === "female" || gender === "male"
+    ? ids.filter((id) => String(voices.find((voice) => voice.id === id)?.gender || "").toLowerCase() === gender)
+    : [];
+  const pool = (matching.length ? [...matching, ...ids.filter((id) => !matching.includes(id))] : ids)
+    .filter((id) => id !== rejected && id !== model.capabilities?.defaultVoice && !excluded.has(id));
+  if (!pool.length) return undefined;
+  return Number.isFinite(speakerHash) ? pool[Math.abs(speakerHash) % pool.length] : pool[0];
+}
+
+function isUnsupportedVoiceError(error: unknown): boolean {
+  const value = error as AnyRecord | null;
+  const message = typeof error === "string"
+    ? error
+    : String(value?.message || value?.error?.message || value?.reason || error || "");
+  const code = errorCode(error).toUpperCase();
+  return code === "AUDIO_VOICE_INVALID" || code === "-32145" || /AUDIO_VOICE_INVALID|voice.{0,80}(?:not supported|unsupported)|(?:not supported|unsupported).{0,80}voice/i.test(message);
 }
 
 function base64ToBytes(value: string): ArrayBuffer {
@@ -949,12 +1044,58 @@ export async function speakText(text: string, voiceHint?: string): Promise<Array
   const model = await getTtsModel();
   if (!model || typeof anna.audio?.speak !== "function") throw new Error("Voice is not available in this Anna workspace.");
   return guarded(async () => {
-    const out = await anna.audio!.speak!({
-      text,
-      model: model.name ?? model.id,
-      voice: pickVoice(model, voiceHint),
-      delivery: "inline",
-    });
+    const candidates = voiceCandidates(model, voiceHint);
+    const savedVoice = getSavedVoice(model, voiceHint);
+    const firstVoice = savedVoice ?? pickVoice(model, voiceHint, candidates);
+    const defaultVoice = model.capabilities?.defaultVoice;
+    let out: { audioBase64?: string; url?: string; mimeType?: string } | undefined;
+    let successfulVoice = firstVoice;
+    const attempted = new Set<string>();
+    let allowed: string[] = [];
+
+    const attempt = async (voice: string | undefined): Promise<boolean> => {
+      if (voice) attempted.add(voice);
+      try {
+        out = await anna.audio!.speak!({
+          text,
+          model: model.name ?? model.id,
+          voice,
+          delivery: "inline",
+        });
+        successfulVoice = voice;
+        return true;
+      } catch (error) {
+        if (!isUnsupportedVoiceError(error)) throw error;
+        allowed = allowedVoiceIds(error);
+        return false;
+      }
+    };
+
+    const firstSucceeded = await attempt(firstVoice);
+    if (!firstSucceeded) {
+      // AUDIO_VOICE_INVALID may include the exact valid ids in data.allowed.
+      // Use that list to pick one alternate, keeping retries bounded.
+      const alternate = retryVoice(model, voiceHint, firstVoice, allowed, attempted);
+      if (alternate) {
+        await attempt(alternate);
+      }
+    }
+
+    if (!out && defaultVoice && !attempted.has(defaultVoice)) {
+      await attempt(defaultVoice);
+    }
+
+    if (!out) {
+      // The catalogue may not match the backend's accepted voice IDs. Give the
+      // backend one chance to use its own default by omitting `voice` entirely.
+      out = await anna.audio!.speak!({
+        text,
+        model: model.name ?? model.id,
+        delivery: "inline",
+      });
+      successfulVoice = undefined;
+    }
+    saveVoice(model, voiceHint, successfulVoice);
     if (out?.audioBase64) return base64ToBytes(out.audioBase64);
     if (out?.url) {
       const response = await fetch(out.url);
